@@ -1,0 +1,51 @@
+{
+  "name": "macro",
+  "field_mappings": {
+    "fecha": ["fecha"],
+    "referencia": ["nro. de referencia", "nro referencia", "nro de ref", "referencia"],
+    "causal": ["causal"],
+    "detalle": ["concepto","detalle","descripcion"],
+    "importe": ["importe"],
+    "saldo": ["saldo"]
+  },
+  "keywords": ["BANCO MACRO","MACRO","FIDEICOMISO","CUENTA CORRIENTE ESPECIAL"],
+  "date_patterns": ["\\d{1,2}/\\d{1,2}/\\d{4}"],
+  "amount_patterns": ["-?\\$?\\s*\\d{1,3}(?:\\.\\d{3})*,\\d{2}", "-?\\$?\\s*\\d+,\\d{2}"],
+  "exclude_keywords": ["últimos movimientos","cuenta corriente especial","caja de ahorro","tipo","número","moneda","fecha de descarga","operador:","empresa:"],
+  "table_required_keywords": ["fecha","nro. de referencia","causal","concepto","importe","saldo"],
+  "table_detection": {
+    "header_row_indicators": ["fecha","nro. de referencia","causal","concepto","importe","saldo"],
+    "data_section_start": "fecha",
+    "min_columns": 6,
+    "exact_header_match": true
+  },
+  "preferred_column_order": ["fecha","detalle","referencia","debitos","creditos","saldo"],
+  "amount_logic": {
+    "mode": "sign_with_context",
+    "debit_indicators": ["-","S/DB","DEBITO","DB"],
+    "credit_indicators": ["+","S/CR","CREDITO","CR"],
+    "negative_is_debit": true,
+    "context_keywords": {
+      "debit": ["S/DB","DEBITO","DB","COMISION","IMP.","TRANSF"],
+      "credit": ["S/CR","CREDITO","CR","TRANSF SWITCH"]
+    }
+  },
+  "text_cleaning": {
+    "split_causal_concept": true,
+    "separator": "|"
+  },
+  "validation_rules": {
+    "min_columns": 6,
+    "exact_column_count": 6,
+    "required_fields": ["fecha","detalle","importe","saldo"],
+    "skip_empty_rows": true,
+    "skip_header_rows": true,
+    "amount_validation": {
+      "allow_empty": false,
+      "decimal_places": 2,
+      "thousand_separator": ".",
+      "decimal_separator": ",",
+      "currency_symbol": "$"
+    }
+  }
+}
