@@ -3,7 +3,7 @@ input/
 output/
 
 # Ignorar archivos de texto normales
-*.txt
+notas.txt
 
 # Caché de Python
 __pycache__/
