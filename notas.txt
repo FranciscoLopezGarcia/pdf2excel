@@ -1,5 +1,0 @@
-17/9/25
--separado por modulos anda bien, pero persisten errores
-    -no se separan las columnas como deberia(debe y haber siguen juntos)
-    -ya no aparecen saldos anteriores ni atuales(tienen que aparecer)
--ver que ande con muchos bancos a la vez

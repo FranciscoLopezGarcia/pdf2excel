@@ -1,4 +1,4 @@
-# extractors/extractors/text_extractor.py
+
 import logging
 import re
 from typing import List, Dict, Any

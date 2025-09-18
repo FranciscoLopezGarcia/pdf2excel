@@ -1,0 +1,22 @@
+# Ignorar carpetas de entrada y salida
+input/
+output/
+
+# Ignorar archivos de texto normales
+*.txt
+
+# Caché de Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Entornos virtuales
+.venv/
+venv/
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
