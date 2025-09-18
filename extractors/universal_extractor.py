@@ -232,6 +232,20 @@ class UniversalBankExtractor:
         
         # Análisis contextual
         detalle_lower = detalle.lower()
+        original_lower = original_line.lower()
+        
+        # DETECTAR LÍNEAS DE SALDO - PRIORIDAD MÁXIMA
+        is_saldo_line = any(phrase in detalle_lower for phrase in [
+            'saldo anterior', 'saldo actual', 'saldo al cierre', 'saldo del periodo'
+        ]) or any(phrase in original_lower for phrase in [
+            'saldo anterior', 'saldo actual', 'saldo al cierre', 'saldo del periodo'
+        ])
+        
+        # Si es línea de saldo, todo va a saldo
+        if is_saldo_line:
+            # Tomar el primer/único monto como saldo
+            transaction['saldo'] = self._format_amount(amounts[0])
+            return transaction
         
         # Detectar tipo de transacción por contexto
         is_debit_context = any(word in detalle_lower for word in [
@@ -245,10 +259,10 @@ class UniversalBankExtractor:
             'transferencia entre', 'credito por transferencia'
         ])
 
-        # LÓGICA MEJORADA para múltiples montos
+        # LÓGICA MEJORADA para múltiples montos (NO saldo)
         if len(amounts) == 1:
             amount = amounts[0]
-            # Si es negativo (incluye sufijo negativo) o contexto de débito -> débito
+            # Negativos van a débito SOLO si no es línea de saldo
             if amount < 0 or is_debit_context:
                 transaction['debitos'] = self._format_amount(abs(amount))
             else:
@@ -258,19 +272,19 @@ class UniversalBankExtractor:
             # Formato típico: movimiento + saldo
             movement, balance = amounts[0], amounts[1]
             
-            # El movimiento va según contexto
-            if movement < 0 or is_debit_context:
+            # El movimiento va según contexto (no por signo si hay contexto)
+            if is_debit_context:
                 transaction['debitos'] = self._format_amount(abs(movement))
             elif is_credit_context:
                 transaction['creditos'] = self._format_amount(abs(movement))
             else:
-                # Usar signo del monto para decidir
+                # Solo usar signo si no hay contexto claro
                 if movement < 0:
                     transaction['debitos'] = self._format_amount(abs(movement))
                 else:
                     transaction['creditos'] = self._format_amount(abs(movement))
             
-            # El saldo va tal como viene
+            # El saldo va tal como viene (puede ser negativo)
             transaction['saldo'] = self._format_amount(balance)
             
         elif len(amounts) >= 3:
@@ -294,8 +308,8 @@ class UniversalBankExtractor:
             else:
                 movement = amounts[0]
             
-            # Categorizar movimiento
-            if movement < 0 or is_debit_context:
+            # Categorizar movimiento según contexto
+            if is_debit_context:
                 transaction['debitos'] = self._format_amount(abs(movement))
             elif is_credit_context:
                 transaction['creditos'] = self._format_amount(abs(movement))
@@ -306,6 +320,7 @@ class UniversalBankExtractor:
                 else:
                     transaction['creditos'] = self._format_amount(abs(movement))
             
+            # Saldo respeta signo original (puede ser negativo)
             transaction['saldo'] = self._format_amount(balance_candidate)
         
         return transaction
