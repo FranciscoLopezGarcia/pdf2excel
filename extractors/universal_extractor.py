@@ -5,20 +5,24 @@ from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 import camelot
 import logging
+from pathlib import Path
 
 log = logging.getLogger("universal_extractor")
 
 class UniversalBankExtractor:
     def __init__(self):
-        # Universal patterns
+        # Universal patterns - mejorados
         self.date_patterns = [
             r'\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})\b',
             r'\b(\d{2,4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})\b'
         ]
+        
+        # Patrones de montos mejorados para capturar negativos con sufijo
         self.amount_patterns = [
+            r'\d{1,3}(?:[.,]\d{3})*[.,]\d{2}-',  # 1.234,56- (negativo con sufijo)
             r'-?\$?\s*\d{1,3}(?:[.,]\d{3})*[.,]\d{2}',
             r'-?\$?\s*\d+[.,]\d{2}',
-            r'-?\d+[.,]\d{2}-?'  # negative suffix
+            r'\d+[.,]\d{2}'
         ]
         
         # Universal column indicators
@@ -35,9 +39,11 @@ class UniversalBankExtractor:
         try:
             # Try table extraction first
             rows = self._extract_from_tables(pdf_path)
-            if rows:
+            if rows and len(rows) > 5:  # Si hay muchas filas, confiar en tables
                 log.info(f"Extracted {len(rows)} rows using table method")
                 return self._normalize_output(rows)
+            else:
+                log.info("Table method found few rows, trying text")
         except Exception as e:
             log.warning(f"Table extraction failed: {e}")
 
@@ -78,7 +84,7 @@ class UniversalBankExtractor:
         return all_rows
 
     def _extract_from_text(self, pdf_path: str) -> List[Dict]:
-        """Extract using text parsing"""
+        """Extract using text parsing - mejorado para formato tabular"""
         full_text = ""
         try:
             with pdfplumber.open(pdf_path) as doc:
@@ -89,59 +95,129 @@ class UniversalBankExtractor:
             log.error(f"PDF reading failed: {e}")
             return []
 
-        return self._parse_text_content(full_text)
+        return self._parse_text_content_improved(full_text)
 
-    def _parse_text_content(self, text: str) -> List[Dict]:
-        """Parse transactions from raw text"""
+    def _parse_text_content_improved(self, text: str) -> List[Dict]:
+        """Parse transactions from raw text - mejorado para manejar formato tabular"""
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         transactions = []
+        
+        # Buscar secciones de transacciones
+        in_transaction_section = False
+        header_found = False
         
         for line in lines:
             # Skip headers and irrelevant lines
             if self._should_skip_line(line):
                 continue
-                
-            # Look for date pattern
-            date_match = None
-            for pattern in self.date_patterns:
-                match = re.search(pattern, line)
-                if match:
-                    date_match = match
-                    break
-                    
-            if not date_match:
+            
+            # Detectar inicio de sección de transacciones
+            if self._is_transaction_header(line):
+                in_transaction_section = True
+                header_found = True
+                continue
+            
+            # Si encontramos otra sección, salir
+            if header_found and self._is_other_section(line):
+                in_transaction_section = False
                 continue
                 
-            fecha = self._normalize_date(date_match.group(0))
-            if not fecha:
-                continue
-                
-            # Extract amounts from the line
-            amounts = []
-            for pattern in self.amount_patterns:
-                matches = re.findall(pattern, line)
-                for match in matches:
-                    amount = self._parse_amount(match)
-                    if amount != 0:
-                        amounts.append(amount)
+            # Si no estamos en sección de transacciones, buscar líneas con fecha
+            if not in_transaction_section:
+                if not self._line_has_date(line):
+                    continue
             
-            # Remove amounts and date from line to get detail
-            clean_line = line
-            clean_line = re.sub(date_match.re.pattern, '', clean_line)
-            for pattern in self.amount_patterns:
-                clean_line = re.sub(pattern, '', clean_line)
-            
-            detalle = self._clean_text(clean_line)
-            
-            # Parse transaction
-            transaction = self._categorize_amounts(fecha, detalle, amounts)
+            # Parse línea como transacción
+            transaction = self._parse_transaction_line(line)
             if transaction:
                 transactions.append(transaction)
                 
         return transactions
 
-    def _categorize_amounts(self, fecha: str, detalle: str, amounts: List[float]) -> Optional[Dict]:
-        """Categorize amounts into debits/credits based on context and values"""
+    def _is_transaction_header(self, line: str) -> bool:
+        """Detecta si la línea es un header de transacciones"""
+        line_lower = line.lower()
+        header_indicators = ['fecha', 'concepto', 'debitos', 'creditos', 'saldo']
+        found_indicators = sum(1 for indicator in header_indicators if indicator in line_lower)
+        return found_indicators >= 3
+
+    def _is_other_section(self, line: str) -> bool:
+        """Detecta si la línea indica el inicio de otra sección"""
+        line_lower = line.lower()
+        section_indicators = [
+            'debitos automaticos', 'transferencias recibidas', 'transferencias enviadas',
+            'detalle - comision', 'situacion impositiva', 'retenciones'
+        ]
+        return any(indicator in line_lower for indicator in section_indicators)
+
+    def _line_has_date(self, line: str) -> bool:
+        """Verifica si la línea contiene una fecha"""
+        for pattern in self.date_patterns:
+            if re.search(pattern, line):
+                return True
+        return False
+
+    def _parse_transaction_line(self, line: str) -> Optional[Dict]:
+        """Parse una línea individual como transacción - mejorado para formato tabular"""
+        
+        # Buscar fecha
+        date_match = None
+        for pattern in self.date_patterns:
+            match = re.search(pattern, line)
+            if match:
+                date_match = match
+                break
+                
+        if not date_match:
+            return None
+            
+        fecha = self._normalize_date(date_match.group(0))
+        if not fecha:
+            return None
+
+        # Extraer todos los montos de la línea - MEJORADO
+        amounts = []
+        amount_positions = []
+        
+        # Buscar montos con sufijo negativo primero (prioridad)
+        negative_suffix_pattern = r'\d{1,3}(?:[.,]\d{3})*[.,]\d{2}-'
+        for match in re.finditer(negative_suffix_pattern, line):
+            amount = self._parse_amount(match.group(0))
+            if amount != 0:
+                amounts.append(amount)
+                amount_positions.append((match.start(), match.end()))
+        
+        # Luego buscar otros patrones, evitando posiciones ya ocupadas
+        occupied_ranges = set()
+        for start, end in amount_positions:
+            occupied_ranges.update(range(start, end))
+            
+        for pattern in self.amount_patterns[1:]:  # Skip the first one (already processed)
+            for match in re.finditer(pattern, line):
+                if any(pos in occupied_ranges for pos in range(match.start(), match.end())):
+                    continue  # Skip overlapping matches
+                    
+                amount = self._parse_amount(match.group(0))
+                if amount != 0:
+                    amounts.append(amount)
+                    amount_positions.append((match.start(), match.end()))
+                    occupied_ranges.update(range(match.start(), match.end()))
+
+        # Remover fecha y montos para obtener el detalle
+        clean_line = line
+        clean_line = re.sub(date_match.re.pattern, '', clean_line, count=1)
+        
+        # Remover montos en orden inverso para no afectar posiciones
+        for start, end in sorted(amount_positions, reverse=True):
+            clean_line = clean_line[:start-len(line)+len(clean_line)] + clean_line[end-len(line)+len(clean_line):]
+        
+        detalle = self._clean_text(clean_line)
+        
+        # Categorizar montos basado en la estructura de la línea
+        return self._categorize_amounts_improved(fecha, detalle, amounts, line)
+
+    def _categorize_amounts_improved(self, fecha: str, detalle: str, amounts: List[float], original_line: str) -> Optional[Dict]:
+        """Categoriza montos mejorado - análisis de estructura más preciso"""
         if not amounts:
             return None
             
@@ -154,53 +230,91 @@ class UniversalBankExtractor:
             'saldo': ''
         }
         
-        # Context-based categorization
+        # Análisis contextual
         detalle_lower = detalle.lower()
+        
+        # Detectar tipo de transacción por contexto
         is_debit_context = any(word in detalle_lower for word in [
             'debito', 'cargo', 'comision', 'impuesto', 'transferencia enviada', 
-            'retiro', 'pago', 'automatico'
-        ])
-        is_credit_context = any(word in detalle_lower for word in [
-            'credito', 'deposito', 'transferencia recibida', 'abono', 'ingreso'
+            'retiro', 'pago', 'automatico', 'imp.', 'iva', 'interes', 'mantenimiento',
+            'ret.', 'transf. prop'
         ])
         
+        is_credit_context = any(word in detalle_lower for word in [
+            'credito', 'deposito', 'transferencia recibida', 'abono', 'ingreso', 
+            'transferencia entre', 'credito por transferencia'
+        ])
+
+        # LÓGICA MEJORADA para múltiples montos
         if len(amounts) == 1:
             amount = amounts[0]
+            # Si es negativo (incluye sufijo negativo) o contexto de débito -> débito
             if amount < 0 or is_debit_context:
                 transaction['debitos'] = self._format_amount(abs(amount))
             else:
                 transaction['creditos'] = self._format_amount(abs(amount))
                 
         elif len(amounts) == 2:
-            # Usually movement + balance
-            movement = amounts[0]
-            balance = amounts[1]
+            # Formato típico: movimiento + saldo
+            movement, balance = amounts[0], amounts[1]
             
+            # El movimiento va según contexto
             if movement < 0 or is_debit_context:
                 transaction['debitos'] = self._format_amount(abs(movement))
-            else:
+            elif is_credit_context:
                 transaction['creditos'] = self._format_amount(abs(movement))
+            else:
+                # Usar signo del monto para decidir
+                if movement < 0:
+                    transaction['debitos'] = self._format_amount(abs(movement))
+                else:
+                    transaction['creditos'] = self._format_amount(abs(movement))
+            
+            # El saldo va tal como viene
             transaction['saldo'] = self._format_amount(balance)
             
         elif len(amounts) >= 3:
-            # Multiple amounts - take first as movement, last as balance
-            movement = amounts[0]
-            balance = amounts[-1]
+            # Múltiples montos - LÓGICA MEJORADA
+            # Para Patagonia: típicamente [pequeño_imp, movimiento_principal, saldo]
+            # El saldo es generalmente el último o el más grande en valor absoluto
             
+            # Buscar el saldo (último monto o el de mayor magnitud)
+            balance_candidate = amounts[-1]  # Último por defecto
+            
+            # Si el último es muy pequeño comparado con otros, buscar el mayor
+            max_amount = max(amounts, key=abs)
+            if abs(amounts[-1]) < abs(max_amount) / 10:  # Si el último es <10% del mayor
+                balance_candidate = max_amount
+            
+            # El movimiento principal es el que no es saldo y no es muy pequeño
+            movement_candidates = [a for a in amounts if a != balance_candidate]
+            if movement_candidates:
+                # Tomar el mayor de los candidatos restantes
+                movement = max(movement_candidates, key=abs)
+            else:
+                movement = amounts[0]
+            
+            # Categorizar movimiento
             if movement < 0 or is_debit_context:
                 transaction['debitos'] = self._format_amount(abs(movement))
-            else:
+            elif is_credit_context:
                 transaction['creditos'] = self._format_amount(abs(movement))
-            transaction['saldo'] = self._format_amount(balance)
+            else:
+                # Usar signo para decidir
+                if movement < 0:
+                    transaction['debitos'] = self._format_amount(abs(movement))
+                else:
+                    transaction['creditos'] = self._format_amount(abs(movement))
             
+            transaction['saldo'] = self._format_amount(balance_candidate)
+        
         return transaction
 
     def _extract_reference(self, detalle: str) -> str:
         """Extract reference number from detail text"""
-        # Look for common reference patterns
         patterns = [
             r'NRO\.?\s*(\d+)',
-            r'REF\.?\s*(\d+)',
+            r'REF\.?\s*(\d+)', 
             r'REFERENCIA\s*(\d+)',
             r'COMPROBANTE\s*(\d+)',
             r'(\d{8,})'  # Long numbers
@@ -216,14 +330,13 @@ class UniversalBankExtractor:
         """Find the header row in a dataframe"""
         for i, row in df.iterrows():
             row_text = ' '.join([str(cell).lower() for cell in row])
-            # Check if row contains common header indicators
             header_score = 0
             for indicator_list in [self.date_indicators, self.detail_indicators, 
                                  self.balance_indicators]:
                 if any(ind in row_text for ind in indicator_list):
                     header_score += 1
             
-            if header_score >= 2:  # At least 2 different types of columns
+            if header_score >= 2:
                 return i
         return None
 
@@ -280,7 +393,6 @@ class UniversalBankExtractor:
                 if amount != 0:
                     transaction[field] = self._format_amount(abs(amount))
             elif field == 'importe':
-                # Single amount column - categorize by sign or context
                 amount = self._parse_amount(value_str)
                 if amount != 0:
                     if amount < 0:
@@ -295,10 +407,8 @@ class UniversalBankExtractor:
         if not date_str:
             return ""
             
-        # Clean the date string
         date_clean = re.sub(r'[^\d\/\-\.]', '', date_str)
         
-        # Try different formats
         formats = ['%d/%m/%Y', '%d/%m/%y', '%d-%m-%Y', '%d-%m-%y', 
                   '%d.%m.%Y', '%d.%m.%y', '%Y/%m/%d', '%Y-%m-%d']
         
@@ -311,50 +421,66 @@ class UniversalBankExtractor:
         return date_clean
 
     def _parse_amount(self, amount_str: str) -> float:
-        """Parse amount string to float"""
+        """Parse amount string to float - MEJORADO para negativos con sufijo"""
         if not amount_str:
             return 0.0
             
-        # Clean string
         clean_str = str(amount_str).strip()
+        
+        # Detectar negativo con sufijo ANTES de limpiar (1.234,56-)
+        negative_suffix = clean_str.endswith('-')
+        
+        # Remover caracteres no numéricos excepto separadores y signo
         clean_str = re.sub(r'[^\d\-\.,]', '', clean_str)
         
         if not clean_str or clean_str in ['-', '.', ',']:
             return 0.0
         
-        # Handle negative suffix (123,45-)
-        negative_suffix = clean_str.endswith('-')
-        if negative_suffix:
+        # Remover sufijo negativo si existe
+        if negative_suffix and clean_str.endswith('-'):
             clean_str = clean_str[:-1]
             
-        # Determine decimal separator
+        # Detectar negativo con prefijo
+        negative_prefix = clean_str.startswith('-')
+        if negative_prefix:
+            clean_str = clean_str[1:]
+        
+        # Determinar separador decimal
         if ',' in clean_str and '.' in clean_str:
-            # Both separators present
             if clean_str.rfind(',') > clean_str.rfind('.'):
-                # Comma is last = decimal separator
+                # Coma es decimal (formato argentino)
                 clean_str = clean_str.replace('.', '').replace(',', '.')
             else:
-                # Dot is last = decimal separator
+                # Punto es decimal (formato US)
                 clean_str = clean_str.replace(',', '')
         elif ',' in clean_str:
-            # Only comma - check if it's decimal or thousands
-            if len(clean_str.split(',')[-1]) == 2:
+            # Solo coma - verificar si es decimal
+            comma_parts = clean_str.split(',')
+            if len(comma_parts) == 2 and len(comma_parts[1]) == 2:
+                # Es decimal: 1234,56
                 clean_str = clean_str.replace(',', '.')
             else:
+                # Es separador de miles: 1,234
                 clean_str = clean_str.replace(',', '')
         
         try:
             result = float(clean_str)
-            return -result if negative_suffix else result
+            if negative_suffix or negative_prefix:
+                result = -result
+            return result
         except:
             return 0.0
 
     def _format_amount(self, amount: float) -> str:
-        """Format amount with thousands separator and 2 decimals"""
+        """Format amount with Argentine format"""
         try:
-            formatted = f"{amount:,.2f}"
-            # Convert to Argentine format: 1.234,56
-            return formatted.replace(',', 'X').replace('.', ',').replace('X', '.')
+            if amount < 0:
+                formatted = f"{abs(amount):,.2f}"
+                formatted = formatted.replace(',', 'X').replace('.', ',').replace('X', '.')
+                return f"-{formatted}"
+            else:
+                formatted = f"{amount:,.2f}"
+                return formatted.replace(',', 'X').replace('.', ',').replace('X', '.')
         except:
             return str(amount)
 
@@ -369,9 +495,7 @@ class UniversalBankExtractor:
     def _clean_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """Clean dataframe by removing empty rows/columns"""
         df = df.fillna('').astype(str)
-        # Remove completely empty rows
         df = df[~df.apply(lambda row: all(cell.strip() == '' for cell in row), axis=1)]
-        # Remove completely empty columns
         df = df.loc[:, ~df.apply(lambda col: all(cell.strip() == '' for cell in col))]
         return df
 
@@ -383,11 +507,13 @@ class UniversalBankExtractor:
             r'^\s*estimado cliente',
             r'^\s*banco',
             r'^\s*cbu:',
-            r'^\s*cuenta',
+            r'^\s*cuenta corriente en pesos',
             r'^\s*saldo anterior',
-            r'^\s*saldo actual',
+            r'^\s*saldo actual', 
             r'movimientos pendientes',
-            r'^\s*\d+\s*$'  # Just page numbers
+            r'^\s*\d+\s*$',  # Solo números de página
+            r'^\s*subcta\s+suc\s+mda',  # Headers de subcuenta
+            r'^\s*estado de cuentas'
         ]
         
         line_lower = line.lower()
@@ -423,18 +549,3 @@ class UniversalBankExtractor:
             df[col] = df[col].replace('', '0,00')
             
         return df
-
-
-# Usage example
-if __name__ == "__main__":
-    extractor = UniversalBankExtractor()
-    
-    # Process a PDF
-    df = extractor.extract_from_pdf("statement.pdf")
-    
-    if not df.empty:
-        # Save to Excel
-        df.to_excel("extracted_transactions.xlsx", index=False)
-        print(f"Extracted {len(df)} transactions")
-    else:
-        print("No transactions found")
