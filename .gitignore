@@ -5,6 +5,9 @@ output/
 # Ignorar archivos de texto normales
 notas.txt
 
+# Ignorar logs
+*.log
+
 # Caché de Python
 __pycache__/
 *.pyc

@@ -1,96 +1,113 @@
-# extractors/tables_extractor.py
-import camelot
-import pandas as pd
-import re
-from utils.cleaner import clean_text, normalize_date, parse_amount, format_amount
+#!/usr/bin/env python3
+"""
+Simple PDF to Excel Bank Statement Extractor
+Drop PDFs in input folder, get Excel files in output folder.
+No configuration needed.
+"""
 
-EXCLUDE_KEYWORDS = ["estado de cuenta", "saldo anterior", "movimientos pendientes", "descarga"]
+import os
+import sys
+from pathlib import Path
+import logging
+from universal_extractor import UniversalBankExtractor
 
-COLUMN_MAP_STANDARD = {
-    "fecha": ["fecha", "fec", "dia"],
-    "concepto": ["detalle", "concepto", "descripcion", "operacion", "causal"],
-    "referencia": ["referencia", "ref", "nro"],
-    "debito": ["debito", "debitos", "cargo"],
-    "credito": ["credito", "creditos", "abono"],
-    "saldo": ["saldo", "balance"]
-}
+# Setup simple logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('pdf2xls.log')
+    ]
+)
 
-class TablesExtractor:
-    def __init__(self, field_mappings=None):
-        self.field_mappings = field_mappings or COLUMN_MAP_STANDARD
+log = logging.getLogger("pdf2xls")
 
-    # ---------------- utils ----------------
-    # def _clean_table(self, df: pd.DataFrame) -> pd.DataFrame:
-    #     df = df.fillna("").astype(str).applymap(clean_text)
-    #     # eliminar filas vacías
-    #     df = df[~df.apply(lambda r: all(v.strip() == "" for v in r), axis=1)]
-    #     # eliminar columnas vacías
-    #     df = df.loc[:, ~(df.apply(lambda c: all(v.strip() == "" for v in c)))]
-    #     return df
-
-    def _detect_header_row(self, df: pd.DataFrame):
-        for i, row in df.iterrows():
-            row_lower = " ".join([str(x).lower() for x in row])
-            if any(k in row_lower for k in ["fecha", "detalle", "saldo"]):
-                return i
-        return 0
-
-    def _map_headers(self, headers):
-        mapping = {}
-        for i, h in enumerate(headers):
-            h_lower = h.lower()
-            for std, aliases in self.field_mappings.items():
-                if any(a in h_lower for a in aliases):
-                    mapping[i] = std
-        return mapping
-
-    def _parse_row(self, row, header_map, mode="auto"):
-        parsed = {k: "" for k in ["fecha", "concepto", "referencia", "debito", "credito", "saldo"]}
-        for idx, val in enumerate(row):
-            field = header_map.get(idx)
-            if not field:
-                continue
-            val = str(val).strip()
-            if field == "fecha":
-                parsed["fecha"] = normalize_date(val)
-            elif field == "concepto":
-                parsed["concepto"] = val
-            elif field == "referencia":
-                parsed["referencia"] = val
-            elif field in ["debito", "credito", "saldo", "debitos", "creditos"]:
-                num = parse_amount(val)
-                if field == "saldo":
-                    parsed["saldo"] = format_amount(num)
-                elif field == "debito" or field == "debitos":
-                    parsed["debito"] = format_amount(num)
-                elif field == "credito" or field == "creditos":
-                    parsed["credito"] = format_amount(num)
-                    
-        # si solo hay una columna de importe y no hay debito/credito
-        if mode == "auto" and parsed["debito"] == "" and parsed["credito"] == "" and "importe" in row.index:
-            val = parse_amount(row["importe"])
-            if val < 0:
-                parsed["debito"] = format_amount(abs(val))
-            else:
-                parsed["credito"] = format_amount(val)
-        return parsed
-
-    # ---------------- main ----------------
-    def extract_from_pdf(self, pdf_path: str):
-        tables = camelot.read_pdf(pdf_path, flavor="stream", pages="all")
-        results = []
-        for t in tables:
-            df = t.df
-            df = self._clean_table(df)
+def main():
+    # Setup paths
+    script_dir = Path(__file__).parent
+    input_dir = script_dir / "input"
+    output_dir = script_dir / "output"
+    
+    # Create directories
+    input_dir.mkdir(exist_ok=True)
+    output_dir.mkdir(exist_ok=True)
+    
+    log.info(f"Input directory: {input_dir}")
+    log.info(f"Output directory: {output_dir}")
+    
+    # Find PDF files recursively in all subdirectories
+    pdf_files = list(input_dir.rglob("*.pdf"))
+    if not pdf_files:
+        log.warning(f"No PDF files found in {input_dir} (searched recursively)")
+        print(f"\nNo PDF files found in {input_dir} or subdirectories")
+        print("Please add PDF files to the input folder and run again.")
+        return
+    
+    log.info(f"Found {len(pdf_files)} PDF files to process")
+    
+    # Initialize extractor
+    extractor = UniversalBankExtractor()
+    
+    # Process each PDF
+    processed = 0
+    failed = 0
+    
+    for pdf_file in pdf_files:
+        try:
+            # Create relative path for output structure
+            rel_path = pdf_file.relative_to(input_dir)
+            output_subdir = output_dir / rel_path.parent
+            output_subdir.mkdir(parents=True, exist_ok=True)
+            
+            log.info(f"Processing: {rel_path}")
+            print(f"\nProcessing: {rel_path}")
+            
+            # Extract data
+            df = extractor.extract_from_pdf(str(pdf_file))
+            
             if df.empty:
+                log.warning(f"No data extracted from {rel_path}")
+                print(f"  ⚠️  No transactions found")
+                failed += 1
                 continue
+            
+            # Generate output filename (preserve folder structure)
+            output_file = output_subdir / f"{pdf_file.stem}.xlsx"
+            
+            # Save to Excel
+            df.to_excel(output_file, index=False, sheet_name="Transactions")
+            
+            log.info(f"Saved {len(df)} transactions to {output_file.relative_to(output_dir)}")
+            print(f"  ✅ Extracted {len(df)} transactions → {output_file.relative_to(output_dir)}")
+            processed += 1
+            
+        except Exception as e:
+            log.error(f"Failed to process {pdf_file.relative_to(input_dir)}: {e}")
+            print(f"  ❌ Failed: {e}")
+            failed += 1
+    
+    # Summary
+    log.info(f"Processing complete: {processed} successful, {failed} failed")
+    print(f"\n" + "="*50)
+    print(f"SUMMARY:")
+    print(f"  Processed: {processed} files")
+    print(f"  Failed: {failed} files")
+    print(f"  Output folder: {output_dir}")
+    
+    if processed > 0:
+        print(f"\n✅ Check the output folder for your Excel files!")
+    
+    # Wait for user input before closing (useful when double-clicking)
+    if len(sys.argv) == 1:  # No command line arguments = probably double-clicked
+        input("\nPress Enter to exit...")
 
-            header_row_idx = self._detect_header_row(df)
-            headers = df.iloc[header_row_idx].tolist()
-            header_map = self._map_headers(headers)
-            for _, row in df.iloc[header_row_idx + 1:].iterrows():
-                parsed = self._parse_row(row, header_map)
-                # filtrar filas vacías
-                if any([parsed[k] for k in ["fecha", "debito", "credito", "saldo"]]):
-                    results.append(parsed)
-        return results
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\nCancelled by user")
+    except Exception as e:
+        log.error(f"Unexpected error: {e}")
+        print(f"\n❌ Unexpected error: {e}")
+        input("Press Enter to exit...")
