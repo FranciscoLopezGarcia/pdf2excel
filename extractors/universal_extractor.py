@@ -11,31 +11,46 @@ log = logging.getLogger("universal_extractor")
 
 class UniversalBankExtractor:
     def __init__(self):
-        # Universal patterns - mejorados
+        # Universal patterns - expandidos
         self.date_patterns = [
             r'\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})\b',
-            r'\b(\d{2,4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})\b'
+            r'\b(\d{2,4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})\b',
+            r'(\d{2})-(\d{2})\s+',  # ICBC format: 02-01
+            r'(\d{2})-([A-Z]{3})',  # HSBC format: 02-ENE
         ]
         
-        # Patrones de montos mejorados para capturar negativos con sufijo
+        # Patrones de montos expandidos
         self.amount_patterns = [
-            r'\d{1,3}(?:[.,]\d{3})*[.,]\d{2}-',  # 1.234,56- (negativo con sufijo)
+            r'\$\s*-?\d{1,3}(?:[.,]\d{3})*[.,]\d{2}',  # MercadoPago: $ 1.234,56
+            r'\d{1,3}(?:[.,]\d{3})*[.,]\d{2}-',  # Sufijo negativo
             r'-?\$?\s*\d{1,3}(?:[.,]\d{3})*[.,]\d{2}',
             r'-?\$?\s*\d+[.,]\d{2}',
+            r'pesos\s+[\d.,]+',  # Santander old format
             r'\d+[.,]\d{2}'
         ]
         
-        # Universal column indicators
+        # Expandidos column indicators
         self.date_indicators = ['fecha', 'date', 'fec', 'dia']
-        self.detail_indicators = ['concepto', 'detalle', 'descripcion', 'causal', 'operacion', 'movimiento']
-        self.reference_indicators = ['referencia', 'ref', 'nro', 'numero', 'comprobante', 'transaccion']
-        self.debit_indicators = ['debito', 'debitos', 'debe', 'egreso', 'salida', 'cargo']
-        self.credit_indicators = ['credito', 'creditos', 'haber', 'ingreso', 'entrada', 'abono', 'deposito']
-        self.balance_indicators = ['saldo', 'balance', 'total']
+        self.detail_indicators = ['concepto', 'detalle', 'descripcion', 'causal', 'operacion', 'movimiento', 'conceptos', 'referencia']
+        self.reference_indicators = ['referencia', 'ref', 'nro', 'numero', 'comprobante', 'transaccion', 'referencias', 'id']
+        self.debit_indicators = ['debito', 'debitos', 'debe', 'egreso', 'salida', 'cargo', 'débito', 'débitos']
+        self.credit_indicators = ['credito', 'creditos', 'haber', 'ingreso', 'entrada', 'abono', 'deposito', 'crédito', 'créditos']
+        self.balance_indicators = ['saldo', 'balance', 'total', 'saldos']
         self.amount_indicators = ['importe', 'monto', 'valor']
+        
+        # Patrones de inicio de sección - expandidos
+        self.section_start_patterns = [
+            'detalle de movimientos',
+            'movimientos',
+            'fecha.*concepto.*saldo',
+            'fecha.*débito.*crédito',
+            'saldo último extracto',
+            'saldo del período anterior',
+            'saldo inicial'
+        ]
 
     def extract_from_pdf(self, pdf_path: str) -> pd.DataFrame:
-        """Main extraction method - tries tables first, then text"""
+        """Main extraction method - tries tables first, then text, then OCR if needed"""
         try:
             # Try table extraction first
             rows = self._extract_from_tables(pdf_path)
@@ -50,11 +65,17 @@ class UniversalBankExtractor:
         # Fallback to text extraction
         try:
             rows = self._extract_from_text(pdf_path)
-            log.info(f"Extracted {len(rows)} rows using text method")
-            return self._normalize_output(rows)
+            if rows and len(rows) > 0:
+                log.info(f"Extracted {len(rows)} rows using text method")
+                return self._normalize_output(rows)
+            else:
+                log.info("Text method found no rows - PDF might be image-based or corrupted")
         except Exception as e:
             log.error(f"Text extraction failed: {e}")
-            return pd.DataFrame()
+            
+        # If everything fails, return empty
+        log.warning("All extraction methods failed - PDF may be corrupted or image-based")
+        return pd.DataFrame()
 
     def _extract_from_tables(self, pdf_path: str) -> List[Dict]:
         """Extract using camelot table detection"""
@@ -98,26 +119,32 @@ class UniversalBankExtractor:
         return self._parse_text_content_improved(full_text)
 
     def _parse_text_content_improved(self, text: str) -> List[Dict]:
-        """Parse transactions from raw text - mejorado para manejar formato tabular"""
+        """Parse transactions universal - mejorado para múltiples bancos"""
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         transactions = []
         
-        # Buscar secciones de transacciones
+        # Detectar inicio de secciones de transacciones más flexible
         in_transaction_section = False
         header_found = False
         
         for line in lines:
-            # Skip headers and irrelevant lines
+            # Skip headers y líneas irrelevantes
             if self._should_skip_line(line):
                 continue
             
-            # Detectar inicio de sección de transacciones
+            # Detectar inicio de sección de transacciones - más flexible
+            if self._is_section_start(line):
+                in_transaction_section = True
+                header_found = True
+                continue
+            
+            # Detectar header de transacciones
             if self._is_transaction_header(line):
                 in_transaction_section = True
                 header_found = True
                 continue
             
-            # Si encontramos otra sección, salir
+            # Detectar fin de sección
             if header_found and self._is_other_section(line):
                 in_transaction_section = False
                 continue
@@ -134,11 +161,44 @@ class UniversalBankExtractor:
                 
         return transactions
 
-    def _is_transaction_header(self, line: str) -> bool:
-        """Detecta si la línea es un header de transacciones"""
+    def _is_section_start(self, line: str) -> bool:
+        """Detecta inicio de secciones de movimientos de múltiples bancos"""
         line_lower = line.lower()
-        header_indicators = ['fecha', 'concepto', 'debitos', 'creditos', 'saldo']
-        found_indicators = sum(1 for indicator in header_indicators if indicator in line_lower)
+        
+        # Patrones específicos de inicio
+        section_patterns = [
+            r'detalle\s+de\s+movimientos',
+            r'saldo\s+(último\s+extracto|del\s+período\s+anterior|inicial)',
+            r'movimientos\s+en\s+pesos',
+            r'cuenta\s+corriente.*movimientos',
+        ]
+        
+        return any(re.search(pattern, line_lower) for pattern in section_patterns)
+
+    def _is_transaction_header(self, line: str) -> bool:
+        """Detecta headers universales de transacciones"""
+        line_lower = line.lower()
+        
+        # Patrones flexibles de headers
+        header_patterns = [
+            # Patrón básico: fecha + concepto + saldo
+            r'fecha.*concepto.*saldo',
+            r'fecha.*débito.*crédito',
+            r'fecha.*referencia.*saldo',
+            # Headers específicos por banco
+            r'fecha.*conceptos.*referencias.*débitos.*créditos.*saldo',  # Comafi
+            r'fecha.*concepto.*f\.\s*valor.*comprobante.*débito.*crédito.*saldo',  # ICBC
+            r'fecha.*movimiento.*débito.*crédito.*saldo',  # Santander
+            r'fecha.*descripción.*id.*valor.*saldo',  # MercadoPago
+        ]
+        
+        # Verificar patrones específicos primero
+        if any(re.search(pattern, line_lower) for pattern in header_patterns):
+            return True
+            
+        # Verificar indicadores individuales (mínimo 3)
+        indicators = ['fecha', 'concepto', 'debito', 'credito', 'saldo', 'referencia', 'descripcion', 'valor']
+        found_indicators = sum(1 for indicator in indicators if indicator in line_lower)
         return found_indicators >= 3
 
     def _is_other_section(self, line: str) -> bool:
@@ -290,20 +350,15 @@ class UniversalBankExtractor:
         elif len(amounts) >= 3:
             # Múltiples montos - LÓGICA MEJORADA
             # Para Patagonia: típicamente [pequeño_imp, movimiento_principal, saldo]
-            # El saldo es generalmente el último o el más grande en valor absoluto
             
-            # Buscar el saldo (último monto o el de mayor magnitud)
-            balance_candidate = amounts[-1]  # Último por defecto
+            # REGLA ESPECÍFICA: El saldo es SIEMPRE el último monto en la línea
+            balance_candidate = amounts[-1]
             
-            # Si el último es muy pequeño comparado con otros, buscar el mayor
-            max_amount = max(amounts, key=abs)
-            if abs(amounts[-1]) < abs(max_amount) / 10:  # Si el último es <10% del mayor
-                balance_candidate = max_amount
+            # Para movimiento: buscar el más significativo que NO sea el saldo
+            movement_candidates = amounts[:-1]  # Todos excepto el último
             
-            # El movimiento principal es el que no es saldo y no es muy pequeño
-            movement_candidates = [a for a in amounts if a != balance_candidate]
             if movement_candidates:
-                # Tomar el mayor de los candidatos restantes
+                # El movimiento es el mayor de los candidatos (sin considerar el saldo)
                 movement = max(movement_candidates, key=abs)
             else:
                 movement = amounts[0]
@@ -320,7 +375,7 @@ class UniversalBankExtractor:
                 else:
                     transaction['creditos'] = self._format_amount(abs(movement))
             
-            # Saldo respeta signo original (puede ser negativo)
+            # Saldo SIEMPRE respeta signo original (puede ser negativo)
             transaction['saldo'] = self._format_amount(balance_candidate)
         
         return transaction
@@ -436,13 +491,23 @@ class UniversalBankExtractor:
         return date_clean
 
     def _parse_amount(self, amount_str: str) -> float:
-        """Parse amount string to float - MEJORADO para negativos con sufijo"""
+        """Parse amount string universal - expandido para múltiples formatos"""
         if not amount_str:
             return 0.0
             
         clean_str = str(amount_str).strip()
         
-        # Detectar negativo con sufijo ANTES de limpiar (1.234,56-)
+        # Manejar MercadoPago: $ 1.234,56 o $ -1.234,56
+        if '$' in clean_str:
+            clean_str = clean_str.replace('$', '').strip()
+        
+        # Manejar Santander old format: "pesos 1234,56"
+        if 'pesos' in clean_str.lower():
+            clean_str = re.sub(r'pesos\s*', '', clean_str, flags=re.IGNORECASE).strip()
+            if 'menos' in clean_str.lower():
+                clean_str = clean_str.replace('menos', '-', 1)
+        
+        # Detectar negativo con sufijo ANTES de limpiar
         negative_suffix = clean_str.endswith('-')
         
         # Remover caracteres no numéricos excepto separadores y signo
@@ -460,16 +525,16 @@ class UniversalBankExtractor:
         if negative_prefix:
             clean_str = clean_str[1:]
         
-        # Determinar separador decimal
+        # Determinar separador decimal - mejorado para más formatos
         if ',' in clean_str and '.' in clean_str:
             if clean_str.rfind(',') > clean_str.rfind('.'):
-                # Coma es decimal (formato argentino)
+                # Coma es decimal (formato argentino: 1.234,56)
                 clean_str = clean_str.replace('.', '').replace(',', '.')
             else:
-                # Punto es decimal (formato US)
+                # Punto es decimal (formato US: 1,234.56)
                 clean_str = clean_str.replace(',', '')
         elif ',' in clean_str:
-            # Solo coma - verificar si es decimal
+            # Solo coma - verificar contexto
             comma_parts = clean_str.split(',')
             if len(comma_parts) == 2 and len(comma_parts[1]) == 2:
                 # Es decimal: 1234,56
@@ -528,7 +593,13 @@ class UniversalBankExtractor:
             r'movimientos pendientes',
             r'^\s*\d+\s*$',  # Solo números de página
             r'^\s*subcta\s+suc\s+mda',  # Headers de subcuenta
-            r'^\s*estado de cuentas'
+            r'^\s*estado de cuentas',
+            r'^\s*transporte',  # Banco Nación
+            r'^\s*siguiente\s*--->',
+            r'^\s*<---\s*fin',
+            r'^\s*estimaremos se nos formule',
+            r'^\s*sin perjuicio del sistema',
+            r'^\s*por razones operativas'
         ]
         
         line_lower = line.lower()
