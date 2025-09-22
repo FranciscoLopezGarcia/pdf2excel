@@ -6,6 +6,7 @@ from typing import List, Dict, Optional, Tuple
 import camelot
 import logging
 from pathlib import Path
+from .ocr_extractor import OCRExtractor
 
 log = logging.getLogger("universal_extractor")
 
@@ -33,28 +34,34 @@ class UniversalBankExtractor:
         self.credit_indicators = ['credito', 'creditos', 'haber', 'ingreso', 'entrada', 'abono', 'deposito']
         self.balance_indicators = ['saldo', 'balance', 'total']
         self.amount_indicators = ['importe', 'monto', 'valor']
+        self.ocr_extractor = OCRExtractor(lang="es")
 
     def extract_from_pdf(self, pdf_path: str) -> pd.DataFrame:
-        """Main extraction method - tries tables first, then text"""
         try:
-            # Try table extraction first
             rows = self._extract_from_tables(pdf_path)
-            if rows and len(rows) > 5:  # Si hay muchas filas, confiar en tables
-                log.info(f"Extracted {len(rows)} rows using table method")
+            if rows and len(rows) > 5:
                 return self._normalize_output(rows)
-            else:
-                log.info("Table method found few rows, trying text")
         except Exception as e:
             log.warning(f"Table extraction failed: {e}")
 
-        # Fallback to text extraction
         try:
             rows = self._extract_from_text(pdf_path)
-            log.info(f"Extracted {len(rows)} rows using text method")
-            return self._normalize_output(rows)
+            if rows:
+                return self._normalize_output(rows)
         except Exception as e:
-            log.error(f"Text extraction failed: {e}")
-            return pd.DataFrame()
+            log.warning(f"Text extraction failed: {e}")
+
+        # Plan C: OCR
+        try:
+            ocr_text = self.ocr_extractor.extract_text_from_pdf(pdf_path)
+            if ocr_text:
+                rows = self._parse_text_content_improved(ocr_text)
+                if rows:
+                    return self._normalize_output(rows)
+        except Exception as e:
+            log.error(f"OCR extraction failed: {e}")
+
+        return pd.DataFrame()
 
     def _extract_from_tables(self, pdf_path: str) -> List[Dict]:
         """Extract using camelot table detection"""

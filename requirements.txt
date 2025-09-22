@@ -1,5 +1,8 @@
-pandas>=2.0.0
-camelot-py[cv]>=0.10.1
-pdfplumber>=0.9.0
-openpyxl>=3.1.0
-numpy>=1.25.0
+pandas
+numpy
+openpyxl
+camelot-py[cv]
+pdfplumber
+pdf2image
+pymupdf
+poppler-utils   # en Linux; en Windows instalar Poppler manualmente

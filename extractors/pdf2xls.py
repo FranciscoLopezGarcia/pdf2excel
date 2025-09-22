@@ -9,7 +9,7 @@ import os
 import sys
 from pathlib import Path
 import logging
-from universal_extractor import UniversalBankExtractor
+from .universal_extractor import UniversalBankExtractor
 
 # Setup simple logging
 logging.basicConfig(
