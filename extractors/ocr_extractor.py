@@ -1,53 +1,46 @@
-# ocr_extractor.py
 import os
 import tempfile
-from paddleocr import PaddleOCR
+import pytesseract
 from pdf2image import convert_from_path
+import logging
+from config import POPPLER_PATH, TESSERACT_PATH
 
-# Inicializar OCR en CPU (una sola vez para no recalentar la máquina)
-ocr = PaddleOCR(use_angle_cls=True, lang='es', use_gpu=False)
-
-def extract_text_from_pdf(pdf_path: str):
-    """
-    Convierte un PDF escaneado en texto usando PaddleOCR (CPU).
-    Retorna un string con el texto reconocido.
-    """
-    text_output = []
-
-    # Convertir páginas a imágenes temporales
-    with tempfile.TemporaryDirectory() as tmpdir:
-        images = convert_from_path(pdf_path, dpi=200, output_folder=tmpdir)
-        for i, img in enumerate(images):
-            img_path = os.path.join(tmpdir, f"page_{i}.png")
-            img.save(img_path, "PNG")
-
-            # OCR por página
-            result = ocr.ocr(img_path, cls=True)
-            for line in result[0]:
-                text_output.append(line[1][0])  # el texto reconocido
-
-    return "\n".join(text_output)
+pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
 
 
-def extract_table_from_pdf(pdf_path: str):
-    """
-    Intenta reconstruir una tabla básica a partir de OCR.
-    Devuelve una lista de filas (listas de celdas).
-    """
-    tables = []
+log = logging.getLogger("ocr_extractor")
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        images = convert_from_path(pdf_path, dpi=200, output_folder=tmpdir)
-        for i, img in enumerate(images):
-            img_path = os.path.join(tmpdir, f"page_{i}.png")
-            img.save(img_path, "PNG")
+class OCRExtractor:
+    def __init__(self, lang="spa"):
+        """
+        OCR Extractor usando Tesseract en lugar de PaddleOCR.
+        :param lang: idioma (por defecto español 'spa').
+        """
+        self.lang = lang
 
-            result = ocr.ocr(img_path, cls=True)
+    def extract_text_from_pdf(self, pdf_path: str) -> str:
+        """
+        Convierte PDF en imágenes y extrae texto con Tesseract.
+        """
+        text_content = []
+        try:
+            # Convertir PDF a imágenes temporales
+            images = convert_from_path(pdf_path, dpi=300, poppler_path=POPPLER_PATH)
 
-            # Cada línea → tratamos como una fila con palabras separadas por espacios
-            for line in result[0]:
-                text_line = line[1][0]
-                row = text_line.split()
-                tables.append(row)
+            log.info(f"OCR: convertido {len(images)} páginas a imágenes")
 
-    return tables
+            for i, img in enumerate(images):
+                page_text = pytesseract.image_to_string(img, lang=self.lang, config="--oem 3 --psm 6")
+                page_text = page_text.encode("latin-1", errors="ignore").decode("utf-8", errors="ignore")
+
+
+                if page_text.strip():
+                    text_content.append(page_text)
+                else:
+                    log.warning(f"OCR: página {i+1} vacía")
+
+        except Exception as e:
+            log.error(f"OCR con Tesseract falló: {e}")
+            return ""
+
+        return "\n".join(text_content)

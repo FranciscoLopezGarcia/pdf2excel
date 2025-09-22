@@ -6,3 +6,4 @@ pdfplumber
 pdf2image
 pymupdf
 poppler-utils   # en Linux; en Windows instalar Poppler manualmente
+pytesseract
