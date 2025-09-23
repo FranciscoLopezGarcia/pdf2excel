@@ -1,21 +1,21 @@
-# PDF2Excel - Conversor de Archivos Contables 📊📄➡️📈
+# 📄 PDF2Excel Extractor
 
-**Objetivo:**  
-Este proyecto convierte archivos PDF a Excel, especialmente diseñado para **archivos contables**, extractos bancarios y balances.  
-Su enfoque principal es **extraer tablas de manera precisa**, transformarlas en datos estructurados que se puedan analizar fácilmente en Excel.
-
----
-
-## Características principales ✨
-- Extracción automática de tablas de **balances bancarios**.  
-- Conversión de datos a **Excel (.xlsx)** listo para análisis.  
-- Manejo de múltiples PDFs a la vez.  
-- Filtrado y limpieza de datos innecesarios.  
-- Compatible con PDFs generados por bancos y otros sistemas contables.  
+Sistema para convertir **extractos y balances bancarios en PDF** a **Excel**.  
+Funciona con tablas embebidas en PDFs o, en caso de PDFs escaneados, aplica **OCR (PaddleOCR)**.
 
 ---
 
-## Cómo usarlo 🚀
-1. Colocar los PDFs en la carpeta `input/`.  
-2. Ejecutar el script principal:  
-   python3 main.py
+## 🚀 Tecnologías
+- Python 3.11
+- PaddleOCR + PaddlePaddle
+- Camelot + pdfplumber
+- pdf2image (para OCR)
+- Docker + docker-compose
+
+---
+
+## 📦 Instalación y ejecución con Docker
+
+### 1. Construir la imagen
+```bash
+docker compose build --no-cache

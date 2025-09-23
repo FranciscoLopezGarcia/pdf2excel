@@ -1,9 +1,7 @@
-pandas
-numpy
-openpyxl
-camelot-py[cv]
-pdfplumber
-pdf2image
-pymupdf
-poppler-utils   # en Linux; en Windows instalar Poppler manualmente
-pytesseract
+pdfplumber==0.11.4
+camelot-py[cv]==0.11.0
+paddleocr==2.9.1
+paddlepaddle==2.6.1
+pandas==2.2.3
+openpyxl==3.1.5
+pdf2image==1.17.0

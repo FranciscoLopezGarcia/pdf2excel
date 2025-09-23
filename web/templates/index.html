@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>PDF2Excel</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <h2>Subí tus PDFs</h2>
+  <form id="upload-form" enctype="multipart/form-data">
+    <div id="drop-area">Arrastrá tus PDFs acá</div>
+    <input type="file" id="fileElem" multiple accept="application/pdf" hidden>
+    <label for="fileElem">O clic para elegir</label>
+  </form>
+
+  <script>
+    let dropArea = document.getElementById("drop-area");
+    let form = document.getElementById("upload-form");
+
+    dropArea.addEventListener("dragover", e => {
+      e.preventDefault();
+      dropArea.classList.add("highlight");
+    });
+
+    dropArea.addEventListener("drop", e => {
+      e.preventDefault();
+      dropArea.classList.remove("highlight");
+
+      let files = e.dataTransfer.files;
+      let formData = new FormData();
+
+      for (let i = 0; i < files.length; i++) {
+        formData.append("files[]", files[i]);
+      }
+
+      fetch("/upload", { method: "POST", body: formData })
+        .then(resp => resp.blob())
+        .then(blob => {
+          let url = window.URL.createObjectURL(blob);
+          let a = document.createElement("a");
+          a.href = url;
+          a.download = "results.zip";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        });
+    });
+  </script>
+</body>
+</html>

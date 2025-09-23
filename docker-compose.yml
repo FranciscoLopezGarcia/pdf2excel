@@ -1,0 +1,11 @@
+version: "3.9"
+
+services:
+  pdf2excel:
+    build: .
+    container_name: pdf2excel_service
+    volumes:
+      - ./input:/app/input
+      - ./output:/app/output
+    environment:
+      - PYTHONUNBUFFERED=1

@@ -1,25 +1,37 @@
-# Ignorar carpetas de entrada y salida
-input/
-output/
-
-# Ignorar archivos de texto normales
-notas.txt
-
-# Ignorar logs
-*.log
-
-# Caché de Python
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.pkl
+*.log
 
-# Entornos virtuales
-.venv/
+# Virtualenv / Entornos
+.env
+.venv
+env/
 venv/
 
-# Archivos del sistema
+# Configuración de IDEs
+.vscode/
+.idea/
+
+# Archivos temporales
+*.swp
+*.swo
+*.tmp
+*.bak
+
+# Datos locales
+input/
+output/
+debug/
+
+# Docker
+*.pid
+*.seed
+*.pid.lock
+
+# OS
 .DS_Store
 Thumbs.db
-.idea/
-.vscode/

@@ -1,0 +1,10 @@
+17/9/25
+-separado por modulos anda bien, pero persisten errores
+    -no se separan las columnas como deberia(debe y haber siguen juntos)
+    -ya no aparecen saldos anteriores ni atuales(tienen que aparecer)
+-ver que ande con muchos bancos a la vez
+
+18/9/25
+-andan todos bien
+-patagonia presenta errores con la mezcla de saldo/debito/crdito, solo el saldo de los 14M negativo
+-patagonia tiene otra tabla de "debitos automaticos" no anda bien en esa parte por que las toma como credito y son todos debito
