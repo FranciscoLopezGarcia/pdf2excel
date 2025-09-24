@@ -344,6 +344,23 @@
             display: none !important;
         }
 
+        .alert {
+            background-color: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #dc2626;
+            padding: 16px;
+            border-radius: 12px;
+            font-size: 14px;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .alert.success {
+            background-color: #ecfdf5;
+            border-color: #10b981;
+            color: #065f46;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .container {
@@ -394,7 +411,7 @@
         <div class="upload-section">
             <h3 class="section-title">Subir archivos PDF</h3>
             <div id="dropZone" class="drop-zone">
-                <div class="drop-zone-icon">📁</div>
+                <div class="drop-zone-icon">📄</div>
                 <div class="drop-zone-text">Arrastra tus archivos aquí o haz clic para seleccionar</div>
                 <div class="drop-zone-subtext">Soporta múltiples archivos PDF</div>
                 <input type="file" id="fileInput" class="file-input" accept=".pdf" multiple>
@@ -418,15 +435,16 @@
             <button id="convertBtn" class="btn btn-primary" disabled>
                 Convertir a Excel
             </button>
-            <button id="downloadBtn" class="btn btn-success hidden">
+            <a id="downloadBtn" class="btn btn-success hidden" download="resultado.zip">
                 Descargar ZIP
-            </button>
+            </a>
         </div>
     </div>
 
     <script>
+        const API_URL = "http://127.0.0.1:5000/api";
+
         let selectedFiles = [];
-        let convertedFiles = [];
 
         // Elementos del DOM
         const dropZone = document.getElementById('dropZone');
@@ -439,6 +457,24 @@
         const progressBar = document.getElementById('progressBar');
         const progressText = document.getElementById('progressText');
 
+        // API Functions
+        async function apiUpload(files) {
+            const formData = new FormData();
+            files.forEach(f => formData.append("files", f));
+
+            const res = await fetch(`${API_URL}/convert`, {
+                method: "POST",
+                headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` },
+                body: formData
+            });
+
+            if (!res.ok) {
+                const error = await res.text();
+                throw new Error(`Error en conversión: ${error}`);
+            }
+            return await res.blob(); // ZIP
+        }
+
         // Event listeners para drag & drop
         dropZone.addEventListener('click', () => fileInput.click());
         dropZone.addEventListener('dragover', handleDragOver);
@@ -446,7 +482,6 @@
         dropZone.addEventListener('drop', handleDrop);
         fileInput.addEventListener('change', handleFileSelect);
         convertBtn.addEventListener('click', handleConvert);
-        downloadBtn.addEventListener('click', handleDownload);
 
         function handleDragOver(e) {
             e.preventDefault();
@@ -528,48 +563,62 @@
             progressContainer.style.display = 'block';
             convertBtn.disabled = true;
             convertBtn.textContent = 'Convirtiendo...';
+            downloadBtn.classList.add('hidden');
 
-            // Simular conversión
-            for (let i = 0; i < selectedFiles.length; i++) {
-                const progress = ((i + 1) / selectedFiles.length) * 100;
+            // Simular progreso durante la llamada
+            let progress = 0;
+            const progressInterval = setInterval(() => {
+                progress += Math.random() * 10;
+                if (progress > 90) progress = 90; // No pasar del 90% hasta que termine
                 progressBar.style.width = progress + '%';
                 progressText.textContent = Math.round(progress) + '%';
+            }, 200);
 
-                // Simular tiempo de conversión
-                await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
+            try {
+                console.log('Enviando archivos al servidor...');
+                const zipBlob = await apiUpload(selectedFiles);
                 
-                // Simular archivo convertido
-                convertedFiles.push({
-                    original: selectedFiles[i].name,
-                    converted: selectedFiles[i].name.replace('.pdf', '.xlsx')
-                });
-            }
+                // Completar progreso
+                clearInterval(progressInterval);
+                progressBar.style.width = '100%';
+                progressText.textContent = '100%';
 
-            // Conversión completada
-            progressContainer.style.display = 'none';
-            convertBtn.style.display = 'none';
-            downloadBtn.classList.remove('hidden');
-            
-            // Mostrar mensaje de éxito
-            const successMessage = document.createElement('div');
-            successMessage.innerHTML = `
-                <div style="background: #ecfdf5; border: 1px solid #10b981; color: #065f46; padding: 16px; border-radius: 12px; margin: 20px 0; text-align: center;">
-                    <strong>¡Conversión completada!</strong><br>
-                    Se han convertido ${convertedFiles.length} archivos exitosamente.
-                </div>
-            `;
-            progressContainer.parentNode.insertBefore(successMessage, downloadBtn.parentNode);
+                // Crear URL para descarga
+                const url = window.URL.createObjectURL(zipBlob);
+                downloadBtn.href = url;
+                downloadBtn.classList.remove('hidden');
+                
+                // Ocultar progress después de un momento
+                setTimeout(() => {
+                    progressContainer.style.display = 'none';
+                    convertBtn.style.display = 'none';
+                }, 1500);
+                
+                // Mostrar mensaje de éxito
+                showMessage('¡Conversión completada! Los archivos están listos para descargar.', 'success');
+                
+            } catch (error) {
+                console.error('Error en conversión:', error);
+                clearInterval(progressInterval);
+                progressContainer.style.display = 'none';
+                convertBtn.textContent = 'Convertir a Excel';
+                convertBtn.disabled = false;
+                
+                showMessage(`Error en la conversión: ${error.message}`, 'error');
+            }
         }
 
-        function handleDownload() {
-            // Simular descarga de ZIP
-            const link = document.createElement('a');
-            link.href = 'data:application/zip;base64,UEsDBBQAAAAIAA=='; // ZIP vacío simulado
-            link.download = 'converted_files.zip';
-            link.click();
+        function showMessage(text, type) {
+            const message = document.createElement('div');
+            message.className = `alert ${type === 'success' ? 'success' : ''}`;
+            message.textContent = text;
             
-            // Mostrar mensaje de descarga
-            alert('¡Descarga iniciada! Los archivos convertidos se descargarán como un archivo ZIP.');
+            const controls = document.querySelector('.controls');
+            controls.parentNode.insertBefore(message, controls);
+            
+            setTimeout(() => {
+                message.remove();
+            }, 5000);
         }
 
         function logout() {

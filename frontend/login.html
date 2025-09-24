@@ -1,310 +1,166 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - PDF2Excel</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-
-        .login-container {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(15px);
-            border-radius: 24px;
-            padding: 48px;
-            width: 100%;
-            max-width: 420px;
-            box-shadow: 0 32px 64px rgba(0, 0, 0, 0.12);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            position: relative;
-            overflow: hidden;
-        }
-
-        .login-container::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 4px;
-            background: linear-gradient(90deg, #0d6efd, #6610f2);
-        }
-
-        .logo {
-            text-align: center;
-            margin-bottom: 32px;
-        }
-
-        .logo h2 {
-            background: linear-gradient(90deg, #0d6efd, #6610f2);
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-            font-size: 32px;
-            font-weight: 700;
-            margin-bottom: 8px;
-            letter-spacing: -0.5px;
-        }
-
-        .subtitle {
-            color: #64748b;
-            font-size: 16px;
-            font-weight: 400;
-        }
-
-        .form-group {
-            margin-bottom: 24px;
-        }
-
-        .form-label {
-            display: block;
-            margin-bottom: 8px;
-            color: #374151;
-            font-weight: 500;
-            font-size: 14px;
-        }
-
-        .form-control {
-            width: 100%;
-            padding: 14px 16px;
-            border: 2px solid #e5e7eb;
-            border-radius: 12px;
-            font-size: 16px;
-            transition: all 0.3s ease;
-            background-color: #f9fafb;
-            color: #374151;
-        }
-
-        .form-control:focus {
-            outline: none;
-            border-color: #0d6efd;
-            box-shadow: 0 0 0 4px rgba(13, 110, 253, 0.1);
-            background-color: #ffffff;
-        }
-
-        .form-control::placeholder {
-            color: #9ca3af;
-        }
-
-        .form-check {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 32px;
-        }
-
-        .form-check-input {
-            width: 18px;
-            height: 18px;
-            accent-color: #0d6efd;
-            cursor: pointer;
-        }
-
-        .form-check-label {
-            color: #6b7280;
-            font-size: 14px;
-            cursor: pointer;
-            user-select: none;
-        }
-
-        .btn {
-            width: 100%;
-            background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%);
-            color: white;
-            padding: 16px;
-            border: none;
-            border-radius: 12px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 20px 40px rgba(13, 110, 253, 0.3);
-        }
-
-        .btn:active {
-            transform: translateY(0);
-        }
-
-        .btn::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-            transition: left 0.5s;
-        }
-
-        .btn:hover::before {
-            left: 100%;
-        }
-
-        .alert {
-            background-color: #fef2f2;
-            border: 1px solid #fecaca;
-            color: #dc2626;
-            padding: 16px;
-            border-radius: 12px;
-            font-size: 14px;
-            text-align: center;
-            margin-top: 20px;
-            display: none;
-        }
-
-        .alert.show {
-            display: block;
-            animation: slideIn 0.3s ease-out;
-        }
-
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        /* Responsive */
-        @media (max-width: 480px) {
-            .login-container {
-                padding: 32px 24px;
-                margin: 20px;
-            }
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - PDF2Excel</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .login-container {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(15px);
+      border-radius: 24px;
+      padding: 48px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 32px 64px rgba(0, 0, 0, 0.12);
+    }
+    .logo {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .logo h2 {
+      background: linear-gradient(90deg, #0d6efd, #6610f2);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      color: #64748b;
+      font-size: 16px;
+      text-align: center;
+    }
+    .form-group {
+      margin-bottom: 24px;
+    }
+    .form-label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: #374151;
+    }
+    .form-control {
+      width: 100%;
+      padding: 14px 16px;
+      border: 2px solid #e5e7eb;
+      border-radius: 12px;
+      font-size: 16px;
+      background-color: #f9fafb;
+    }
+    .form-control:focus {
+      border-color: #0d6efd;
+      outline: none;
+    }
+    .btn {
+      width: 100%;
+      background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%);
+      color: white;
+      padding: 16px;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .alert {
+      background-color: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #dc2626;
+      padding: 16px;
+      border-radius: 12px;
+      text-align: center;
+      margin-top: 20px;
+      display: none;
+    }
+    .alert.show {
+      display: block;
+    }
+  </style>
 </head>
 <body>
-    <div class="login-container">
-        <div class="logo">
-            <h2>PDF2Excel</h2>
-            <p class="subtitle">Inicia sesión para continuar</p>
-        </div>
-        
-        <form id="loginForm">
-            <div class="form-group">
-                <label class="form-label">Usuario</label>
-                <input type="text" id="username" class="form-control" required placeholder="Ingresa tu usuario">
-            </div>
-            
-            <div class="form-group">
-                <label class="form-label">Contraseña</label>
-                <input type="password" id="password" class="form-control" required placeholder="••••••••">
-            </div>
-            
-            <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="remember">
-                <label class="form-check-label" for="remember">Recordarme</label>
-            </div>
-            
-            <button type="submit" class="btn">Ingresar</button>
-        </form>
-        
-        <div id="loginError" class="alert">
-            Usuario o contraseña incorrectos
-        </div>
+  <div class="login-container">
+    <div class="logo">
+      <h2>PDF2Excel</h2>
+      <p class="subtitle">Inicia sesión para continuar</p>
     </div>
+    <form id="loginForm">
+      <div class="form-group">
+        <label class="form-label">Usuario</label>
+        <input type="text" id="username" class="form-control" required placeholder="admin o user">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Contraseña</label>
+        <input type="password" id="password" class="form-control" required placeholder="admin123 o user123">
+      </div>
+      <button type="submit" class="btn">Ingresar</button>
+    </form>
+    <div id="loginError" class="alert">Usuario o contraseña incorrectos</div>
+  </div>
 
-    <script>
-        // Simulación del API y funcionalidad de login
-        const api = {
-            login: async (username, password) => {
-                // Simulación de llamada API
-                return new Promise((resolve) => {
-                    setTimeout(() => {
-                        if (username === 'admin' && password === 'admin123') {
-                            resolve({ success: true, role: 'admin', token: 'admin-token' });
-                        } else if (username === 'user' && password === 'user123') {
-                            resolve({ success: true, role: 'user', token: 'user-token' });
-                        } else {
-                            resolve({ success: false });
-                        }
-                    }, 1000);
-                });
-            }
-        };
+  <script>
+    const API_URL = "http://127.0.0.1:5000/api"; // backend Flask
 
-        document.getElementById('loginForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const remember = document.getElementById('remember').checked;
-            const errorDiv = document.getElementById('loginError');
-            const submitBtn = e.target.querySelector('button[type="submit"]');
-            
-            // Mostrar estado de carga
-            const originalText = submitBtn.textContent;
-            submitBtn.textContent = 'Ingresando...';
-            submitBtn.disabled = true;
-            errorDiv.classList.remove('show');
-            
-            try {
-                const result = await api.login(username, password);
-                
-                if (result.success) {
-                    // Guardar token y rol
-                    localStorage.setItem('token', result.token);
-                    localStorage.setItem('role', result.role);
-                    
-                    if (remember) {
-                        localStorage.setItem('remember', 'true');
-                    }
-                    
-                    // Redirigir según el rol
-                    if (result.role === 'admin') {
-                        window.location.href = 'admin.html';
-                    } else {
-                        window.location.href = 'converter.html';
-                    }
-                } else {
-                    errorDiv.classList.add('show');
-                    submitBtn.textContent = originalText;
-                    submitBtn.disabled = false;
-                }
-            } catch (error) {
-                errorDiv.classList.add('show');
-                submitBtn.textContent = originalText;
-                submitBtn.disabled = false;
-            }
+    document.getElementById('loginForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const errorDiv = document.getElementById('loginError');
+      errorDiv.classList.remove('show');
+
+      try {
+        const res = await fetch(`${API_URL}/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password })
         });
 
-        // Verificar si ya hay token al cargar
-        window.onload = () => {
-            const token = localStorage.getItem('token');
-            const role = localStorage.getItem('role');
-            
-            if (token) {
-                if (role === 'admin') {
-                    window.location.href = 'admin.html';
-                } else {
-                    window.location.href = 'converter.html';
-                }
-            }
-        };
-    </script>
+        if (!res.ok) {
+          errorDiv.classList.add('show');
+          return;
+        }
+
+        const result = await res.json();
+        if (result.token) {
+          localStorage.setItem("token", result.token);
+          localStorage.setItem("role", result.role);
+
+          if (result.role === "admin") {
+            window.location.href = "admin.html";
+          } else {
+            window.location.href = "converter.html";
+          }
+        } else {
+          errorDiv.classList.add('show');
+        }
+      } catch (err) {
+        console.error("Login error:", err);
+        errorDiv.classList.add('show');
+      }
+    });
+
+    // Si ya hay token, redirigir
+    window.onload = () => {
+      const token = localStorage.getItem("token");
+      const role = localStorage.getItem("role");
+      if (token && role) {
+        if (role === "admin") {
+          window.location.href = "admin.html";
+        } else {
+          window.location.href = "converter.html";
+        }
+      }
+    };
+  </script>
 </body>
 </html>
