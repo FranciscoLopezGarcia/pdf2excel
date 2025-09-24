@@ -1,25 +1,30 @@
-FROM python:3.11-slim
+# Imagen base
+FROM python:3.10-slim
 
+# Evitar preguntas interactivas
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Instalar dependencias del sistema
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    ghostscript \
-    poppler-utils \
     tesseract-ocr \
-    tesseract-ocr-spa \
-    libglib2.0-0 \
-    libsm6 \
-    libxrender1 \
-    libxext6 \
-    libgl1 \
+    poppler-utils \
+    ghostscript \
+    build-essential \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Directorio de trabajo
 WORKDIR /app
 
+# Copiar requirements e instalar
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copiar todo el código
 COPY . .
 
-CMD ["python", "-m", "extractors.pdf2xls"]
+# Crear carpetas input/output (por si no existen)
+RUN mkdir -p input output
+
+# Comando por defecto → ejecutar tu script principal
+CMD ["python", "-m", "backend.pdf2xls"]
