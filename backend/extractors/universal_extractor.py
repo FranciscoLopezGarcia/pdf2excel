@@ -34,30 +34,66 @@ class UniversalBankExtractor:
         self.credit_indicators = ['credito', 'creditos', 'haber', 'ingreso', 'entrada', 'abono', 'deposito']
         self.balance_indicators = ['saldo', 'balance', 'total']
         self.amount_indicators = ['importe', 'monto', 'valor']
-        self.ocr_extractor = OCRExtractor(lang="es")
+        self.ocr_extractor = OCRExtractor(lang="spa")
 
     def extract_from_pdf(self, pdf_path: str) -> pd.DataFrame:
+        # PASO 1: Camelot (tablas)
+        log.info(f"🔍 Intentando extracción con Camelot (tablas)...")
         try:
             rows = self._extract_from_tables(pdf_path)
-            return self._normalize_output(rows)
+            if rows:
+                log.info(f"✅ Camelot exitoso: {len(rows)} transacciones")
+                return self._normalize_output(rows)
+            else:
+                log.info("❌ Camelot no encontró tablas válidas")
         except Exception as e:
-            log.warning(f"Table extraction failed: {e}")
+            log.warning(f"❌ Camelot falló: {e}")
 
+        # PASO 2: PDFPlumber (texto)
+        log.info(f"🔍 Intentando extracción con PDFPlumber (texto)...")
         try:
             rows = self._extract_from_text(pdf_path)
-            return self._normalize_output(rows)
+            if rows:
+                log.info(f"✅ PDFPlumber exitoso: {len(rows)} transacciones")
+                return self._normalize_output(rows)
+            else:
+                log.info("❌ PDFPlumber no encontró transacciones válidas")
         except Exception as e:
-            log.warning(f"Text extraction failed: {e}")
+            log.warning(f"❌ PDFPlumber falló: {e}")
 
+        # PASO 3: OCR (fallback final)
+        log.info(f"🔍 Intentando extracción con OCR (imágenes)...")
         try:
-            ocr_text = self.ocr_extractor.extract_text_from_pdf(pdf_path)
+            # Usar extract_text_pages en lugar de extract_text_from_pdf
+            pages_data = self.ocr_extractor.extract_text_pages(pdf_path)
+            if not pages_data:
+                log.warning("❌ OCR no detectó páginas relevantes")
+                return pd.DataFrame()
+            
+            log.info(f"📄 OCR detectó {len(pages_data)} páginas relevantes")
+            
+            # Concatenar texto de todas las páginas
+            ocr_text = "\n\n".join([f"--- Página {p} ---\n{t}" for p, t in pages_data])
+            
+            if not ocr_text.strip():
+                log.warning("❌ OCR devolvió texto vacío")
+                return pd.DataFrame()
+            
+            log.info(f"📝 OCR extrajo {len(ocr_text)} caracteres de texto")
+            
+            # Parse del texto OCR
             rows = self._parse_text_content_improved(ocr_text)
-            return self._normalize_output(rows)
+            if rows:
+                log.info(f"✅ OCR exitoso: {len(rows)} transacciones extraídas")
+                return self._normalize_output(rows)
+            else:
+                log.warning("❌ OCR no pudo parsear transacciones del texto")
+                
         except Exception as e:
-            log.error(f"OCR extraction failed: {e}")
+            log.error(f"❌ OCR falló completamente: {e}")
 
+        log.error("🚫 Todos los métodos de extracción fallaron")
         return pd.DataFrame()
-
 
     def _extract_from_tables(self, pdf_path: str) -> List[Dict]:
         """Extract using camelot table detection"""
@@ -142,7 +178,7 @@ class UniversalBankExtractor:
         line_lower = line.lower()
         header_indicators = ['fecha', 'concepto', 'debitos', 'creditos', 'saldo']
         found_indicators = sum(1 for indicator in header_indicators if indicator in line_lower)
-        return found_indicators >= 3
+        return found_indicators >= 2
 
     def _is_other_section(self, line: str) -> bool:
         """Detecta si la línea indica el inicio de otra sección"""

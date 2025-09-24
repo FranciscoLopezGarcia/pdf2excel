@@ -35,3 +35,40 @@ debug/
 # OS
 .DS_Store
 Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual envs
+.venv/
+env/
+venv/
+
+# Logs
+*.log
+logs/
+
+# System
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+
+# Input/Output data
+input/
+output/
+output_txt/
+
+# Excel y temporales
+*.xlsx
+*.csv
+*.tmp
+
+# Docker
+*.egg-info/
