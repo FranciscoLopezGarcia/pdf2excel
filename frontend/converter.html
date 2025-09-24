@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversor - PDF2Excel</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding-top: 80px;
+            color: #333;
+        }
+
+        .navbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(15px);
+            padding: 20px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            z-index: 1000;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .navbar-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .navbar-brand {
+            background: linear-gradient(90deg, #0d6efd, #6610f2);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-size: 24px;
+            font-weight: 700;
+            text-decoration: none;
+        }
+
+        .btn-logout {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            padding: 10px 24px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 14px;
+        }
+
+        .btn-logout:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(220, 53, 69, 0.3);
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        .upload-section {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(15px);
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 32px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-section::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #0d6efd, #6610f2);
+        }
+
+        .section-title {
+            background: linear-gradient(90deg, #0d6efd, #6610f2);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 32px;
+            text-align: center;
+            letter-spacing: -0.5px;
+        }
+
+        .drop-zone {
+            border: 3px dashed #cbd5e0;
+            border-radius: 16px;
+            padding: 60px 40px;
+            text-align: center;
+            background: #f8fafc;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .drop-zone.dragover {
+            border-color: #0d6efd;
+            background: #eff6ff;
+            transform: scale(1.02);
+        }
+
+        .drop-zone-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            color: #64748b;
+        }
+
+        .drop-zone-text {
+            font-size: 18px;
+            color: #374151;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .drop-zone-subtext {
+            font-size: 14px;
+            color: #64748b;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .file-list {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(15px);
+            border-radius: 20px;
+            padding: 32px;
+            margin-bottom: 32px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            display: none;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px;
+            background: #f8fafc;
+            border-radius: 12px;
+            margin-bottom: 12px;
+            border: 1px solid #e5e7eb;
+            transition: all 0.3s ease;
+        }
+
+        .file-item:hover {
+            background: #f1f5f9;
+            transform: translateX(4px);
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .file-icon {
+            font-size: 24px;
+            color: #dc2626;
+        }
+
+        .file-details {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .file-name {
+            font-weight: 500;
+            color: #374151;
+            font-size: 15px;
+        }
+
+        .file-size {
+            font-size: 13px;
+            color: #64748b;
+        }
+
+        .file-remove {
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 12px;
+        }
+
+        .file-remove:hover {
+            background: #dc2626;
+            transform: scale(1.05);
+        }
+
+        .controls {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(15px);
+            border-radius: 20px;
+            padding: 32px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            text-align: center;
+        }
+
+        .btn {
+            padding: 16px 32px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 8px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%);
+            color: white;
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .btn:hover::before {
+            left: 100%;
+        }
+
+        .progress-container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(15px);
+            border-radius: 20px;
+            padding: 32px;
+            margin: 32px 0;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            display: none;
+        }
+
+        .progress-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+
+        .progress-bar-container {
+            background: #e5e7eb;
+            border-radius: 10px;
+            height: 20px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-bar {
+            background: linear-gradient(90deg, #0d6efd, #6610f2);
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+            position: relative;
+        }
+
+        .progress-bar::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(45deg, rgba(255,255,255,.2) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.2) 50%, rgba(255,255,255,.2) 75%, transparent 75%, transparent);
+            background-size: 30px 30px;
+            animation: progress-animation 1s linear infinite;
+        }
+
+        .progress-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #374151;
+            font-weight: 600;
+            font-size: 12px;
+        }
+
+        @keyframes progress-animation {
+            0% { background-position: 0 0; }
+            100% { background-position: 30px 0; }
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px 16px;
+            }
+            
+            .upload-section,
+            .file-list,
+            .controls,
+            .progress-container {
+                padding: 24px;
+            }
+            
+            .section-title {
+                font-size: 24px;
+            }
+            
+            .drop-zone {
+                padding: 40px 20px;
+            }
+            
+            .file-item {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 12px;
+            }
+            
+            .file-info {
+                justify-content: center;
+            }
+            
+            .btn {
+                width: 100%;
+                margin: 8px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-content">
+            <a href="#" class="navbar-brand">PDF2Excel</a>
+            <button class="btn-logout" onclick="logout()">Salir</button>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="upload-section">
+            <h3 class="section-title">Subir archivos PDF</h3>
+            <div id="dropZone" class="drop-zone">
+                <div class="drop-zone-icon">📁</div>
+                <div class="drop-zone-text">Arrastra tus archivos aquí o haz clic para seleccionar</div>
+                <div class="drop-zone-subtext">Soporta múltiples archivos PDF</div>
+                <input type="file" id="fileInput" class="file-input" accept=".pdf" multiple>
+            </div>
+        </div>
+
+        <div id="fileList" class="file-list">
+            <h4 style="margin-bottom: 20px; color: #374151; font-size: 18px; font-weight: 600;">Archivos seleccionados</h4>
+            <div id="fileItems"></div>
+        </div>
+
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-title">Convirtiendo archivos...</div>
+            <div class="progress-bar-container">
+                <div id="progressBar" class="progress-bar"></div>
+                <div class="progress-text" id="progressText">0%</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button id="convertBtn" class="btn btn-primary" disabled>
+                Convertir a Excel
+            </button>
+            <button id="downloadBtn" class="btn btn-success hidden">
+                Descargar ZIP
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let selectedFiles = [];
+        let convertedFiles = [];
+
+        // Elementos del DOM
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileList = document.getElementById('fileList');
+        const fileItems = document.getElementById('fileItems');
+        const convertBtn = document.getElementById('convertBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+
+        // Event listeners para drag & drop
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', handleDragOver);
+        dropZone.addEventListener('dragleave', handleDragLeave);
+        dropZone.addEventListener('drop', handleDrop);
+        fileInput.addEventListener('change', handleFileSelect);
+        convertBtn.addEventListener('click', handleConvert);
+        downloadBtn.addEventListener('click', handleDownload);
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        }
+
+        function handleDragLeave(e) {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const files = Array.from(e.dataTransfer.files).filter(file => file.type === 'application/pdf');
+            addFiles(files);
+        }
+
+        function handleFileSelect(e) {
+            const files = Array.from(e.target.files);
+            addFiles(files);
+        }
+
+        function addFiles(files) {
+            files.forEach(file => {
+                if (!selectedFiles.find(f => f.name === file.name && f.size === file.size)) {
+                    selectedFiles.push(file);
+                }
+            });
+            updateFileList();
+            updateConvertButton();
+        }
+
+        function removeFile(index) {
+            selectedFiles.splice(index, 1);
+            updateFileList();
+            updateConvertButton();
+        }
+
+        function updateFileList() {
+            if (selectedFiles.length === 0) {
+                fileList.style.display = 'none';
+                return;
+            }
+
+            fileList.style.display = 'block';
+            fileItems.innerHTML = selectedFiles.map((file, index) => `
+                <div class="file-item">
+                    <div class="file-info">
+                        <div class="file-icon">📄</div>
+                        <div class="file-details">
+                            <div class="file-name">${file.name}</div>
+                            <div class="file-size">${formatFileSize(file.size)}</div>
+                        </div>
+                    </div>
+                    <button class="file-remove" onclick="removeFile(${index})">
+                        Eliminar
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        function updateConvertButton() {
+            convertBtn.disabled = selectedFiles.length === 0;
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        async function handleConvert() {
+            if (selectedFiles.length === 0) return;
+
+            // Mostrar progress
+            progressContainer.style.display = 'block';
+            convertBtn.disabled = true;
+            convertBtn.textContent = 'Convirtiendo...';
+
+            // Simular conversión
+            for (let i = 0; i < selectedFiles.length; i++) {
+                const progress = ((i + 1) / selectedFiles.length) * 100;
+                progressBar.style.width = progress + '%';
+                progressText.textContent = Math.round(progress) + '%';
+
+                // Simular tiempo de conversión
+                await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
+                
+                // Simular archivo convertido
+                convertedFiles.push({
+                    original: selectedFiles[i].name,
+                    converted: selectedFiles[i].name.replace('.pdf', '.xlsx')
+                });
+            }
+
+            // Conversión completada
+            progressContainer.style.display = 'none';
+            convertBtn.style.display = 'none';
+            downloadBtn.classList.remove('hidden');
+            
+            // Mostrar mensaje de éxito
+            const successMessage = document.createElement('div');
+            successMessage.innerHTML = `
+                <div style="background: #ecfdf5; border: 1px solid #10b981; color: #065f46; padding: 16px; border-radius: 12px; margin: 20px 0; text-align: center;">
+                    <strong>¡Conversión completada!</strong><br>
+                    Se han convertido ${convertedFiles.length} archivos exitosamente.
+                </div>
+            `;
+            progressContainer.parentNode.insertBefore(successMessage, downloadBtn.parentNode);
+        }
+
+        function handleDownload() {
+            // Simular descarga de ZIP
+            const link = document.createElement('a');
+            link.href = 'data:application/zip;base64,UEsDBBQAAAAIAA=='; // ZIP vacío simulado
+            link.download = 'converted_files.zip';
+            link.click();
+            
+            // Mostrar mensaje de descarga
+            alert('¡Descarga iniciada! Los archivos convertidos se descargarán como un archivo ZIP.');
+        }
+
+        function logout() {
+            if (confirm('¿Estás seguro de que quieres cerrar sesión?')) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('role');
+                localStorage.removeItem('remember');
+                window.location.href = 'login.html';
+            }
+        }
+
+        // Verificar autenticación
+        window.onload = () => {
+            const token = localStorage.getItem('token');
+            
+            if (!token) {
+                window.location.href = 'login.html';
+                return;
+            }
+        };
+    </script>
+</body>
+</html>

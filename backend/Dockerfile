@@ -1,13 +1,13 @@
 FROM python:3.11-slim
 
-# Evitamos prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Dependencias del sistema para camelot y pdfplumber
 RUN apt-get update && apt-get install -y \
     build-essential \
     ghostscript \
     poppler-utils \
+    tesseract-ocr \
+    tesseract-ocr-spa \
     libglib2.0-0 \
     libsm6 \
     libxrender1 \

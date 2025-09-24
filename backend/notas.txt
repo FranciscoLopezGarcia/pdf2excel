@@ -8,3 +8,11 @@
 -andan todos bien
 -patagonia presenta errores con la mezcla de saldo/debito/crdito, solo el saldo de los 14M negativo
 -patagonia tiene otra tabla de "debitos automaticos" no anda bien en esa parte por que las toma como credito y son todos debito
+
+
+
+
+23/9/25
+-todo funcional
+-dockerizado
+-revisar lectura de imagenes

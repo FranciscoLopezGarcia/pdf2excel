@@ -1,0 +1,136 @@
+/* --------- GENERAL --------- */
+body {
+  background-color: #121212;
+  color: #f0f0f0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+h3, h1, h2 {
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+
+/* Navbar con gradiente */
+.navbar {
+  background: linear-gradient(90deg, #0d6efd, #6610f2);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.6);
+}
+
+/* Botones */
+.btn-primary {
+  background: linear-gradient(90deg, #0d6efd, #6610f2);
+  border: none;
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+}
+
+.btn-success {
+  background: linear-gradient(90deg, #198754, #20c997);
+  border: none;
+}
+
+.btn-success:hover {
+  opacity: 0.9;
+}
+
+.btn-outline-light {
+  border-color: #f0f0f0;
+}
+
+/* Inputs */
+.form-control, .form-check-input {
+  background-color: #1e1e1e;
+  border: 1px solid #444;
+  color: #ddd;
+}
+
+.form-control:focus {
+  background-color: #2c2c2c;
+  border-color: #0d6efd;
+  color: #fff;
+  box-shadow: none;
+}
+
+/* Tarjetas */
+.card {
+  background-color: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.6);
+}
+
+/* --------- LOGIN --------- */
+.login-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+#loginForm button {
+  font-weight: 600;
+}
+
+/* --------- CONVERSOR --------- */
+#dropZone {
+  background: #1e1e1e;
+  border: 2px dashed #666;
+  border-radius: 12px;
+  padding: 60px 20px;
+  text-align: center;
+  font-size: 18px;
+  color: #aaa;
+  transition: all 0.3s ease-in-out;
+  cursor: pointer;
+}
+
+#dropZone:hover {
+  background: #222;
+  border-color: #0d6efd;
+  color: #fff;
+  transform: scale(1.02);
+}
+
+.list-group-item {
+  background-color: #1e1e1e;
+  color: #ddd;
+  border: 1px solid #333;
+}
+
+.list-group-item:hover {
+  background-color: #2c2c2c;
+}
+
+.progress {
+  background-color: #2c2c2c;
+  height: 25px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  background: linear-gradient(90deg, #0d6efd, #6610f2);
+  font-weight: 600;
+}
+
+/* --------- ADMIN --------- */
+.table-dark {
+  background-color: #1e1e1e;
+  border-radius: 8px;
+}
+
+.table-dark th, .table-dark td {
+  color: #ddd;
+  vertical-align: middle;
+}
+
+.table-dark thead {
+  background: linear-gradient(90deg, #0d6efd, #6610f2);
+  color: #fff;
+}
+
+.table-dark tbody tr:hover {
+  background-color: #2c2c2c;
+}
