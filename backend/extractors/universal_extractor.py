@@ -39,29 +39,25 @@ class UniversalBankExtractor:
     def extract_from_pdf(self, pdf_path: str) -> pd.DataFrame:
         try:
             rows = self._extract_from_tables(pdf_path)
-            if rows and len(rows) > 5:
-                return self._normalize_output(rows)
+            return self._normalize_output(rows)
         except Exception as e:
             log.warning(f"Table extraction failed: {e}")
 
         try:
             rows = self._extract_from_text(pdf_path)
-            if rows:
-                return self._normalize_output(rows)
+            return self._normalize_output(rows)
         except Exception as e:
             log.warning(f"Text extraction failed: {e}")
 
-        # Plan C: OCR
         try:
             ocr_text = self.ocr_extractor.extract_text_from_pdf(pdf_path)
-            if ocr_text:
-                rows = self._parse_text_content_improved(ocr_text)
-                if rows:
-                    return self._normalize_output(rows)
+            rows = self._parse_text_content_improved(ocr_text)
+            return self._normalize_output(rows)
         except Exception as e:
             log.error(f"OCR extraction failed: {e}")
 
         return pd.DataFrame()
+
 
     def _extract_from_tables(self, pdf_path: str) -> List[Dict]:
         """Extract using camelot table detection"""

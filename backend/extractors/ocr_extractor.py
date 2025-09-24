@@ -5,6 +5,8 @@ from typing import List, Tuple
 from pdf2image import convert_from_path
 import pytesseract
 from PIL import Image, ImageOps
+from config import POPPLER_PATH, TESSERACT_PATH
+
 
 logger = logging.getLogger(__name__)
 
@@ -13,9 +15,9 @@ class OCRExtractor:
     def __init__(
         self,
         lang: str = "spa",
-        tesseract_cmd: str = r"C:\Users\FranciscoLópezGarcía\AppData\Local\Programs\Tesseract-OCR\tesseract.exe",
-        poppler_bin: str = r"C:\Users\FranciscoLópezGarcía\Downloads\Release-25.07.0-0 (2)\poppler-25.07.0\Library\bin",
-    ):
+        tesseract_cmd: str = TESSERACT_PATH,
+        poppler_bin: str = POPPLER_PATH,
+        ):
         """
         OCR con Tesseract (Windows).
         - lang: idioma OCR (ej. 'spa')
@@ -106,7 +108,10 @@ class OCRExtractor:
             try:
                 img_p = self._preprocess(img, scale=1.25, thr=180)
                 raw = pytesseract.image_to_string(img_p, lang=self.lang, config=self.tess_config)
-                text = raw.encode("latin-1", errors="ignore").decode("latin-1")
+                #######
+                safe_text = raw.encode("latin-1", errors="ignore").decode("latin-1", errors="ignore")
+                text = safe_text
+                #######
                 is_rel, stats = self._es_pagina_relevante(text)
                 logger.info(
                     f"Página {i} quick → relev={is_rel} | headers={stats['headers']} "
@@ -136,7 +141,10 @@ class OCRExtractor:
                 img = imgs_full[i - 1]  # mismo índice de página
                 img_p = self._preprocess(img, scale=1.35, thr=180)
                 raw = pytesseract.image_to_string(img_p, lang=self.lang, config=self.tess_config)
-                text = raw.encode("latin-1", errors="ignore").decode("latin-1")
+                #######
+                safe_text = raw.encode("latin-1", errors="ignore").decode("latin-1", errors="ignore")
+                text = safe_text
+                #######
                 resultados.append((i, text))
                 logger.info(f"Página {i} full → {len(text)} chars")
             except Exception as e:

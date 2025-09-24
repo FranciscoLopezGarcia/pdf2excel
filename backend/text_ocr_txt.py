@@ -4,7 +4,7 @@ from extractors.ocr_extractor import OCRExtractor
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(message)s")
 
-PDF = r"input\MES JUNIO 2025.pdf"
+PDF = r"input\ENERO 2025.pdf"
 OUTPUT_DIR = "output_txt"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
