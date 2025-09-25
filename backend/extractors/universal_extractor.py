@@ -596,7 +596,11 @@ class UniversalBankExtractor:
                 df[col] = ''
         
         # Reorder columns
-        df = df[required_columns]
+        df['mes'] = pd.to_datetime(df['fecha'], errors='coerce').dt.month.fillna(0).astype(int)
+        df['año'] = pd.to_datetime(df['fecha'], errors='coerce').dt.year.fillna(0).astype(int)
+
+        ordered_columns = ['fecha', 'mes', 'año', 'detalle', 'referencia', 'debitos', 'creditos', 'saldo']
+        df = df[ordered_columns]
         
         # Clean up empty strings in amount columns
         for col in ['debitos', 'creditos', 'saldo']:

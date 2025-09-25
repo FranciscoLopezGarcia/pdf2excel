@@ -25,3 +25,12 @@
 -frontend ok
 -falta: relacionar operaciones intrabancarias
 -falta: barra de carga de front mas realista
+
+
+
+25/9/25
+-todo ok
+-columna extra separando año y mes OK
+-barra de carga realista 
+-relacionar operaciones (necesito diccionario de outsourcing)
+-consolidado anual

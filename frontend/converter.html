@@ -458,22 +458,59 @@
         const progressText = document.getElementById('progressText');
 
         // API Functions
-        async function apiUpload(files) {
-            const formData = new FormData();
-            files.forEach(f => formData.append("files", f));
+        function apiUpload(files, onProgress) {
+            return new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                const formData = new FormData();
+                files.forEach(f => formData.append("files", f));
 
-            const res = await fetch(`${API_URL}/convert`, {
-                method: "POST",
-                headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` },
-                body: formData
-            });
+                xhr.open("POST", `${API_URL}/convert`);
+                xhr.setRequestHeader("Authorization", `Bearer ${localStorage.getItem("token")}`);
+                xhr.responseType = "blob";
 
-            if (!res.ok) {
-                const error = await res.text();
-                throw new Error(`Error en conversión: ${error}`);
+        // Evento de progreso real de subida
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable && onProgress) {
+                        const percent = Math.round((e.loaded / e.total) * 100);
+                        onProgress(percent);
             }
-            return await res.blob(); // ZIP
+        };
+
+                xhr.onload = () => {
+                    if (xhr.status === 200) {
+                        resolve(xhr.response);}
+                    else {
+                        reject(new Error(`Error en conversión: ${xhr.responseText}`));
+            }
+        };
+
+                xhr.onerror = () => reject(new Error("Error de red"));
+                xhr.send(formData);
+    });
+}
+
+
+        function listenProgress() {
+    const evtSource = new EventSource(`${API_URL}/progress`);
+    evtSource.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            progressBar.style.width = data.progress + "%";
+            progressText.textContent = data.progress + "% - " + data.status;
+            if (data.progress >= 100) {
+                evtSource.close();
+            }
+        } catch (e) {
+            console.error("Error parseando SSE:", e, event.data);
         }
+    };
+
+    evtSource.onerror = (err) => {
+        console.error("Error SSE:", err);
+        evtSource.close();
+    };
+}
+
 
         // Event listeners para drag & drop
         dropZone.addEventListener('click', () => fileInput.click());
@@ -559,54 +596,48 @@
         async function handleConvert() {
             if (selectedFiles.length === 0) return;
 
-            // Mostrar progress
             progressContainer.style.display = 'block';
             convertBtn.disabled = true;
             convertBtn.textContent = 'Convirtiendo...';
             downloadBtn.classList.add('hidden');
 
-            // Simular progreso durante la llamada
-            let progress = 0;
-            const progressInterval = setInterval(() => {
-                progress += Math.random() * 10;
-                if (progress > 90) progress = 90; // No pasar del 90% hasta que termine
-                progressBar.style.width = progress + '%';
-                progressText.textContent = Math.round(progress) + '%';
-            }, 200);
-
             try {
-                console.log('Enviando archivos al servidor...');
-                const zipBlob = await apiUpload(selectedFiles);
-                
-                // Completar progreso
-                clearInterval(progressInterval);
-                progressBar.style.width = '100%';
-                progressText.textContent = '100%';
+                console.log('Subiendo archivos al servidor...');
 
-                // Crear URL para descarga
+        // 1. Arrancamos SSE para progreso de procesamiento
+                listenProgress();
+
+        // 2. Subida real con XMLHttpRequest
+                const zipBlob = await apiUpload(selectedFiles, (percent) => {
+                    progressBar.style.width = percent + "%";
+                    progressText.textContent = percent + "%";
+        });
+
+        // 3. Al terminar, forzamos 100%
+                progressBar.style.width = "100%";
+                progressText.textContent = "100%";
+
+        // 4. Preparamos descarga
                 const url = window.URL.createObjectURL(zipBlob);
                 downloadBtn.href = url;
                 downloadBtn.classList.remove('hidden');
-                
-                // Ocultar progress después de un momento
+
                 setTimeout(() => {
                     progressContainer.style.display = 'none';
                     convertBtn.style.display = 'none';
-                }, 1500);
-                
-                // Mostrar mensaje de éxito
-                showMessage('¡Conversión completada! Los archivos están listos para descargar.', 'success');
-                
-            } catch (error) {
-                console.error('Error en conversión:', error);
-                clearInterval(progressInterval);
-                progressContainer.style.display = 'none';
-                convertBtn.textContent = 'Convertir a Excel';
-                convertBtn.disabled = false;
-                
-                showMessage(`Error en la conversión: ${error.message}`, 'error');
-            }
-        }
+        }, 1500);
+
+        showMessage('¡Conversión completada! Los archivos están listos para descargar.', 'success');
+
+    } catch (error) {
+        console.error('Error en conversión:', error);
+        progressContainer.style.display = 'none';
+        convertBtn.textContent = 'Convertir a Excel';
+        convertBtn.disabled = false;
+        showMessage(`Error en la conversión: ${error.message}`, 'error');
+    }
+}
+
 
         function showMessage(text, type) {
             const message = document.createElement('div');

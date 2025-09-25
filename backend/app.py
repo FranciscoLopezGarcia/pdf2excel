@@ -1,7 +1,7 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, Response
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
-import jwt, datetime, os, io, zipfile, logging
+import jwt, datetime, os, io, zipfile, logging, time
 import pandas as pd
 from extractors.universal_extractor import UniversalBankExtractor
 
@@ -13,17 +13,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Config
-SECRET_KEY = "super_secret_key"  # ⚠️ cambiar en producción y mover a config.py
+SECRET_KEY = "super_secret_key"  # ⚠️ cambiar en producción
 UPLOAD_FOLDER = "input"
 OUTPUT_FOLDER = "output"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
+# Estado de progreso por usuario
+progress_state = {}
+
 # Flask app
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
-
 
 
 # --- Helper: validar JWT ---
@@ -57,9 +59,7 @@ def login():
     username = data.get("username")
     password = data.get("password")
 
-    logger.info(f"Login intento para usuario: {username}")
-
-    # ⚠️ Hardcode para pruebas, después conectar a DB
+    # ⚠️ Hardcode para pruebas
     if username == "admin" and password == "admin123":
         role = "admin"
     elif username == "user" and password == "user123":
@@ -78,121 +78,100 @@ def login():
     return jsonify({"token": token, "role": role})
 
 
+# --- PROGRESO SSE ---
+@app.route("/api/progress")
+@token_required
+def progress():
+    user = request.user["username"]
+
+    def generate():
+        last_sent = ""
+        while True:
+            time.sleep(1)
+            state = progress_state.get(user)
+            if state and state != last_sent:
+                yield f"data: {state}\n\n"
+                last_sent = state
+            if state and '"progress": 100' in state:
+                break
+
+    return Response(generate(), mimetype="text/event-stream")
+
+
 # --- CONVERSIÓN ---
 @app.route("/api/convert", methods=["POST"])
 @token_required
 def convert():
     logger.info("=== INICIO CONVERSIÓN ===")
-    logger.info(f"Usuario: {request.user.get('username')}")
-    
+    user = request.user.get("username")
     extractor = UniversalBankExtractor()
     uploaded_files = request.files.getlist("files")
 
-    logger.info(f"Archivos recibidos: {len(uploaded_files)}")
-    for file in uploaded_files:
-        logger.info(f"  - {file.filename} ({file.content_length} bytes)")
-
     if not uploaded_files:
-        logger.error("No se enviaron archivos")
         return jsonify({"error": "No se enviaron archivos"}), 400
+
+    total_files = len(uploaded_files)
+    progress_state[user] = '{"progress": 0, "status": "Iniciando conversión"}'
 
     output = io.BytesIO()
     zipf = zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED)
 
     combined = []
-    log_messages = []  # para log.txt dentro del ZIP
+    log_messages = []
 
-    for file in uploaded_files:
+    for idx, file in enumerate(uploaded_files, start=1):
         filename = secure_filename(file.filename)
         temp_path = os.path.join(UPLOAD_FOLDER, filename)
-        
-        logger.info(f"Procesando: {filename}")
-        logger.info(f"Guardando temporalmente en: {temp_path}")
-        
         file.save(temp_path)
-        
-        # Verificar que el archivo se guardó correctamente
-        if not os.path.exists(temp_path):
-            logger.error(f"Error: archivo temporal no existe: {temp_path}")
-            continue
-            
-        file_size = os.path.getsize(temp_path)
-        logger.info(f"Archivo guardado: {file_size} bytes")
+
+        progress_state[user] = (
+            f'{{"progress": {int(((idx-1)/total_files)*100)}, '
+            f'"status": "Procesando {filename}"}}'
+        )
 
         try:
-            logger.info(f"Iniciando extracción para: {filename}")
             df = extractor.extract_from_pdf(temp_path)
-            
-            if df is None:
-                logger.error(f"Extractor devolvió None para: {filename}")
-                msg = f"{filename}: ERROR - Extractor devolvió None"
+
+            if df is None or df.empty:
+                msg = f"{filename}: ERROR - Sin transacciones"
                 zipf.writestr(f"{filename}-ERROR.txt", msg)
                 log_messages.append(msg)
-                continue
-                
-            if df.empty:
-                logger.warning(f"DataFrame vacío para: {filename}")
-                msg = f"{filename}: ERROR - No se detectaron transacciones"
-                zipf.writestr(f"{filename}-ERROR.txt", msg)
-                log_messages.append(msg)
-                continue
-
-            logger.info(f"Extracción exitosa: {len(df)} filas para {filename}")
-            
-            # Guardar excel individual
-            excel_bytes = io.BytesIO()
-            df.to_excel(excel_bytes, index=False, sheet_name="Transactions")
-            excel_data = excel_bytes.getvalue()
-            
-            logger.info(f"Excel generado: {len(excel_data)} bytes para {filename}")
-            zipf.writestr(f"{os.path.splitext(filename)[0]}.xlsx", excel_data)
-
-            # Acumular para consolidado
-            df["archivo"] = filename
-            combined.append(df)
-            log_messages.append(f"{filename}: OK - {len(df)} filas exportadas")
+            else:
+                excel_bytes = io.BytesIO()
+                df.to_excel(excel_bytes, index=False, sheet_name="Transactions")
+                zipf.writestr(f"{os.path.splitext(filename)[0]}.xlsx", excel_bytes.getvalue())
+                df["archivo"] = filename
+                combined.append(df)
+                log_messages.append(f"{filename}: OK - {len(df)} filas exportadas")
 
         except Exception as e:
-            logger.error(f"Error procesando {filename}: {str(e)}", exc_info=True)
             msg = f"{filename}: ERROR - {str(e)}"
-            zipf.writestr(f"{filename}-ERROR.txt", str(e))
+            zipf.writestr(f"{filename}-ERROR.txt", msg)
             log_messages.append(msg)
-        
         finally:
-            # Limpiar archivo temporal
-            try:
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-                    logger.info(f"Archivo temporal eliminado: {temp_path}")
-            except Exception as e:
-                logger.warning(f"Error eliminando temporal {temp_path}: {e}")
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+        progress_state[user] = (
+            f'{{"progress": {int((idx/total_files)*100)}, '
+            f'"status": "Completado {filename}"}}'
+        )
 
     # Consolidado
     if combined:
-        logger.info(f"Generando consolidado con {len(combined)} archivos")
         df_all = pd.concat(combined, ignore_index=True)
         excel_bytes = io.BytesIO()
         df_all.to_excel(excel_bytes, index=False, sheet_name="Consolidado")
-        consolidado_data = excel_bytes.getvalue()
-        
-        logger.info(f"Consolidado generado: {len(consolidado_data)} bytes")
-        zipf.writestr("consolidado.xlsx", consolidado_data)
+        zipf.writestr("consolidado.xlsx", excel_bytes.getvalue())
         log_messages.append("Consolidado generado con éxito")
     else:
-        logger.warning("No se pudo generar consolidado")
         log_messages.append("No se pudo generar consolidado")
 
-    # Siempre incluir log.txt
-    log_content = "\n".join(log_messages)
-    zipf.writestr("log.txt", log_content)
-    logger.info(f"Log incluido: {len(log_content)} caracteres")
-
+    zipf.writestr("log.txt", "\n".join(log_messages))
     zipf.close()
-    zip_size = len(output.getvalue())
     output.seek(0)
-    
-    logger.info(f"ZIP final generado: {zip_size} bytes")
-    logger.info("=== FIN CONVERSIÓN ===")
+
+    progress_state[user] = '{"progress": 100, "status": "Finalizado"}'
 
     return send_file(
         output,
@@ -206,7 +185,6 @@ def convert():
 @app.route("/api/logs", methods=["GET"])
 @token_required
 def logs():
-    # ⚠️ Simulación: conectar a DB o JSON más adelante
     data = [
         {"user": "fran", "date": "2025-09-24", "ok": 3, "errors": 1, "reason": "OCR falló"},
         {"user": "ana", "date": "2025-09-23", "ok": 5, "errors": 0, "reason": ""}
@@ -216,4 +194,4 @@ def logs():
 
 if __name__ == "__main__":
     logger.info("Iniciando servidor Flask...")
-    app.run(port=5000, debug=True)
+    app.run(port=5000, debug=True, threaded=True)
