@@ -327,7 +327,11 @@ class UniversalBankExtractor:
             transaction['saldo'] = self._format_amount(balance)
             
         elif len(amounts) >= 3:
-           # Buscar el saldo (último monto o el de mayor magnitud)
+            # Múltiples montos - LÓGICA MEJORADA
+            # Para Patagonia: típicamente [pequeño_imp, movimiento_principal, saldo]
+            # El saldo es generalmente el último o el más grande en valor absoluto
+            
+            # Buscar el saldo (último monto o el de mayor magnitud)
             balance_candidate = amounts[-1]  # Último por defecto
             
             # Si el último es muy pequeño comparado con otros, buscar el mayor
