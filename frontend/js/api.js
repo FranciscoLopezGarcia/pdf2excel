@@ -31,3 +31,17 @@ async function apiLogs() {
   if (!res.ok) return [];
   return await res.json();
 }
+
+async function apiUnificar(files) {
+  const formData = new FormData();
+  files.forEach(f => formData.append("files", f));
+
+  const res = await fetch(`${API_URL}/unificar`, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` },
+    body: formData
+  });
+
+  if (!res.ok) throw new Error("Error en unificación");
+  return await res.blob(); // Excel
+}

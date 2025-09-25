@@ -4,6 +4,8 @@ from werkzeug.utils import secure_filename
 import jwt, datetime, os, io, zipfile, logging, time
 import pandas as pd
 from extractors.universal_extractor import UniversalBankExtractor
+from extractors.unificador import unir_consolidados
+
 
 # Config logging
 logging.basicConfig(
@@ -190,6 +192,42 @@ def logs():
         {"user": "ana", "date": "2025-09-23", "ok": 5, "errors": 0, "reason": ""}
     ]
     return jsonify(data)
+
+
+# --- UNIFICAR CONSOLIDADOS ---
+@app.route("/api/unificar", methods=["POST"])
+@token_required
+def unificar():
+    logger.info("=== INICIO UNIFICADOR ===")
+    user = request.user.get("username")
+    uploaded_files = request.files.getlist("files")
+
+    if not uploaded_files:
+        return jsonify({"error": "No se enviaron archivos"}), 400
+
+    temp_files = []
+    for file in uploaded_files:
+        filename = secure_filename(file.filename)
+        temp_path = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(temp_path)
+        temp_files.append(temp_path)
+
+    try:
+        output_path = os.path.join(OUTPUT_FOLDER, "consolidado_anual.xlsx")
+        unir_consolidados(temp_files, output_path)
+
+        return send_file(
+            output_path,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name="consolidado_anual.xlsx"
+        )
+    finally:
+        # limpieza
+        for path in temp_files:
+            if os.path.exists(path):
+                os.remove(path)
+
 
 
 if __name__ == "__main__":
