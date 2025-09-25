@@ -327,11 +327,7 @@ class UniversalBankExtractor:
             transaction['saldo'] = self._format_amount(balance)
             
         elif len(amounts) >= 3:
-            # Múltiples montos - LÓGICA MEJORADA
-            # Para Patagonia: típicamente [pequeño_imp, movimiento_principal, saldo]
-            # El saldo es generalmente el último o el más grande en valor absoluto
-            
-            # Buscar el saldo (último monto o el de mayor magnitud)
+           # Buscar el saldo (último monto o el de mayor magnitud)
             balance_candidate = amounts[-1]  # Último por defecto
             
             # Si el último es muy pequeño comparado con otros, buscar el mayor
@@ -601,5 +597,7 @@ class UniversalBankExtractor:
         # Clean up empty strings in amount columns
         for col in ['debitos', 'creditos', 'saldo']:
             df[col] = df[col].replace('', '0,00')
+            df[col] = df[col].str.replace('.', '', regex=False).str.replace(',', '.',regex=False)
+            df[col] = pd.to_numeric(df[col],errors='coerce').fillna(0.0)
             
         return df

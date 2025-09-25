@@ -16,3 +16,12 @@
 -todo funcional
 -dockerizado
 -revisar lectura de imagenes
+
+24/9/25
+-OCR ok
+-tabla ok
+-texto ok
+-docker ok
+-frontend ok
+-falta: relacionar operaciones intrabancarias
+-falta: barra de carga de front mas realista
