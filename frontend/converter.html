@@ -408,6 +408,7 @@
     </nav>
 
     <div class="container">
+        <!-- SECCIÓN PDF A EXCEL -->
         <div class="upload-section">
             <h3 class="section-title">Subir archivos PDF</h3>
             <div id="dropZone" class="drop-zone">
@@ -419,7 +420,7 @@
         </div>
 
         <div id="fileList" class="file-list">
-            <h4 style="margin-bottom: 20px; color: #374151; font-size: 18px; font-weight: 600;">Archivos seleccionados</h4>
+            <h4 style="margin-bottom: 20px; color: #374151; font-size: 18px; font-weight: 600;">Archivos PDF seleccionados</h4>
             <div id="fileItems"></div>
         </div>
 
@@ -430,6 +431,7 @@
                 <div class="progress-text" id="progressText">0%</div>
             </div>
         </div>
+
         <div class="controls">
             <button id="convertBtn" class="btn btn-primary" disabled>
                 Convertir a Excel
@@ -440,57 +442,42 @@
         </div>
     </div>
 
-
     <div class="container">
+        <!-- SECCIÓN UNIFICAR CONSOLIDADOS -->
         <div class="upload-section">
-            <h3 class="section-title">Subir archivos Excel</h3>
+            <h3 class="section-title">Unificar Consolidados Excel</h3>
             <div id="dropZoneUnificar" class="drop-zone">
-                <label style="display:block; width:100%; height:100%; cursor:pointer;">
-                    <div class="drop-zone-icon">📊</div>
-                    <div class="drop-zone-text">Arrastra aquí tus consolidados mensuales o haz clic</div>
-                    <div class="drop-zone-subtext">Soporta múltiples archivos .xlsx</div>
-                    <input type="file" id="fileInputUnificar" class="file-input" accept=".xls,.xlsx" multiple>
-                </label>
+                <div class="drop-zone-icon">📊</div>
+                <div class="drop-zone-text">Arrastra aquí tus consolidados mensuales o haz clic</div>
+                <div class="drop-zone-subtext">Soporta múltiples archivos .xlsx</div>
+                <input type="file" id="fileInputUnificar" class="file-input" accept=".xls,.xlsx" multiple>
             </div>
         </div>
 
-        <div id="fileList" class="file-list">
-            <h4 style="margin-bottom: 20px; color: #374151; font-size: 18px; font-weight: 600;">Archivos seleccionados</h4>
-            <div id="fileItems"></div>
-        </div>
-        
         <div id="excelList" class="file-list">
             <h4 style="margin-bottom: 20px; color: #374151; font-size: 18px; font-weight: 600;">
-            Consolidados seleccionados
+                Consolidados seleccionados
             </h4>
             <div id="excelItems"></div>
         </div>
 
-        <div class="progress-container" id="progressContainer">
-            <div class="progress-title">Convirtiendo archivos...</div>
-            <div class="progress-bar-container">
-                <div id="progressBar" class="progress-bar"></div>
-                <div class="progress-text" id="progressText">0%</div>
-            </div>
-        </div>
         <div class="controls">
-            <button id="convertBtn" class="btn btn-primary" disabled>
+            <button id="unificarBtn" class="btn btn-primary" disabled>
                 Consolidar
             </button>
-            <a id="downloadBtn" class="btn btn-success hidden" download="resultado.zip">
-                Descargar ZIP
+            <a id="downloadBtnUnificar" class="btn btn-success hidden" download="consolidado_anual.xlsx">
+                Descargar Consolidado
             </a>
         </div>
     </div>
-
-
 
     <script>
         const API_URL = "http://127.0.0.1:5000/api";
 
         let selectedFiles = [];
+        let selectedExcels = [];
 
-        // Elementos del DOM
+        // Elementos del DOM para PDFs
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
         const fileList = document.getElementById('fileList');
@@ -500,6 +487,14 @@
         const progressContainer = document.getElementById('progressContainer');
         const progressBar = document.getElementById('progressBar');
         const progressText = document.getElementById('progressText');
+
+        // Elementos del DOM para Excels
+        const dropZoneUnificar = document.getElementById('dropZoneUnificar');
+        const fileInputUnificar = document.getElementById('fileInputUnificar');
+        const excelList = document.getElementById('excelList');
+        const excelItems = document.getElementById('excelItems');
+        const unificarBtn = document.getElementById('unificarBtn');
+        const downloadBtnUnificar = document.getElementById('downloadBtnUnificar');
 
         // API Functions
         function apiUpload(files, onProgress) {
@@ -512,51 +507,71 @@
                 xhr.setRequestHeader("Authorization", `Bearer ${localStorage.getItem("token")}`);
                 xhr.responseType = "blob";
 
-        // Evento de progreso real de subida
                 xhr.upload.onprogress = (e) => {
                     if (e.lengthComputable && onProgress) {
                         const percent = Math.round((e.loaded / e.total) * 100);
                         onProgress(percent);
-            }
-        };
+                    }
+                };
 
                 xhr.onload = () => {
                     if (xhr.status === 200) {
-                        resolve(xhr.response);}
-                    else {
+                        resolve(xhr.response);
+                    } else {
                         reject(new Error(`Error en conversión: ${xhr.responseText}`));
-            }
-        };
+                    }
+                };
 
                 xhr.onerror = () => reject(new Error("Error de red"));
                 xhr.send(formData);
-    });
-}
+            });
+        }
 
+        function apiUnificar(files) {
+            return new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                const formData = new FormData();
+                files.forEach(f => formData.append("files", f));
+
+                xhr.open("POST", `${API_URL}/unificar`);
+                xhr.setRequestHeader("Authorization", `Bearer ${localStorage.getItem("token")}`);
+                xhr.responseType = "blob";
+
+                xhr.onload = () => {
+                    if (xhr.status === 200) {
+                        resolve(xhr.response);
+                    } else {
+                        reject(new Error(`Error en unificación: ${xhr.responseText}`));
+                    }
+                };
+
+                xhr.onerror = () => reject(new Error("Error de red"));
+                xhr.send(formData);
+            });
+        }
 
         function listenProgress() {
-    const evtSource = new EventSource(`${API_URL}/progress`);
-    evtSource.onmessage = (event) => {
-        try {
-            const data = JSON.parse(event.data);
-            progressBar.style.width = data.progress + "%";
-            progressText.textContent = data.progress + "% - " + data.status;
-            if (data.progress >= 100) {
+            const evtSource = new EventSource(`${API_URL}/progress`);
+            evtSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    progressBar.style.width = data.progress + "%";
+                    progressText.textContent = data.progress + "% - " + data.status;
+                    if (data.progress >= 100) {
+                        evtSource.close();
+                    }
+                } catch (e) {
+                    console.error("Error parseando SSE:", e, event.data);
+                }
+            };
+
+            evtSource.onerror = (err) => {
+                console.error("Error SSE:", err);
                 evtSource.close();
-            }
-        } catch (e) {
-            console.error("Error parseando SSE:", e, event.data);
+            };
         }
-    };
 
-    evtSource.onerror = (err) => {
-        console.error("Error SSE:", err);
-        evtSource.close();
-    };
-}
-
-
-        // Event listeners para drag & drop
+        // Event listeners para PDFs
         dropZone.addEventListener('click', () => fileInput.click());
         dropZone.addEventListener('dragover', handleDragOver);
         dropZone.addEventListener('dragleave', handleDragLeave);
@@ -564,6 +579,15 @@
         fileInput.addEventListener('change', handleFileSelect);
         convertBtn.addEventListener('click', handleConvert);
 
+        // Event listeners para Excels
+        dropZoneUnificar.addEventListener('click', () => fileInputUnificar.click());
+        dropZoneUnificar.addEventListener('dragover', handleDragOverExcel);
+        dropZoneUnificar.addEventListener('dragleave', handleDragLeaveExcel);
+        dropZoneUnificar.addEventListener('drop', handleDropExcel);
+        fileInputUnificar.addEventListener('change', handleFileSelectExcel);
+        unificarBtn.addEventListener('click', handleUnificar);
+
+        // Funciones para PDFs
         function handleDragOver(e) {
             e.preventDefault();
             dropZone.classList.add('dragover');
@@ -629,6 +653,74 @@
             convertBtn.disabled = selectedFiles.length === 0;
         }
 
+        // Funciones para Excels
+        function handleDragOverExcel(e) {
+            e.preventDefault();
+            dropZoneUnificar.classList.add('dragover');
+        }
+
+        function handleDragLeaveExcel(e) {
+            e.preventDefault();
+            dropZoneUnificar.classList.remove('dragover');
+        }
+
+        function handleDropExcel(e) {
+            e.preventDefault();
+            dropZoneUnificar.classList.remove('dragover');
+            const files = Array.from(e.dataTransfer.files)
+                .filter(f => f.name.toLowerCase().endsWith('.xlsx') || f.name.toLowerCase().endsWith('.xls'));
+            addExcels(files);
+        }
+
+        function handleFileSelectExcel(e) {
+            const files = Array.from(e.target.files);
+            addExcels(files);
+        }
+
+        function addExcels(files) {
+            files.forEach(file => {
+                if (!selectedExcels.find(f => f.name === file.name && f.size === file.size)) {
+                    selectedExcels.push(file);
+                }
+            });
+            updateExcelList();
+            updateUnificarButton();
+        }
+
+        function removeExcel(index) {
+            selectedExcels.splice(index, 1);
+            updateExcelList();
+            updateUnificarButton();
+        }
+
+        function updateExcelList() {
+            if (selectedExcels.length === 0) {
+                excelList.style.display = 'none';
+                return;
+            }
+
+            excelList.style.display = 'block';
+            excelItems.innerHTML = selectedExcels.map((file, index) => `
+                <div class="file-item">
+                    <div class="file-info">
+                        <div class="file-icon">📊</div>
+                        <div class="file-details">
+                            <div class="file-name">${file.name}</div>
+                            <div class="file-size">${formatFileSize(file.size)}</div>
+                        </div>
+                    </div>
+                    <button class="file-remove" onclick="removeExcel(${index})">
+                        Eliminar
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        function updateUnificarButton() {
+            unificarBtn.disabled = selectedExcels.length === 0;
+        }
+
+        // Funciones comunes
         function formatFileSize(bytes) {
             if (bytes === 0) return '0 Bytes';
             const k = 1024;
@@ -647,21 +739,16 @@
 
             try {
                 console.log('Subiendo archivos al servidor...');
-
-        // 1. Arrancamos SSE para progreso de procesamiento
                 listenProgress();
 
-        // 2. Subida real con XMLHttpRequest
                 const zipBlob = await apiUpload(selectedFiles, (percent) => {
                     progressBar.style.width = percent + "%";
                     progressText.textContent = percent + "%";
-        });
+                });
 
-        // 3. Al terminar, forzamos 100%
                 progressBar.style.width = "100%";
                 progressText.textContent = "100%";
 
-        // 4. Preparamos descarga
                 const url = window.URL.createObjectURL(zipBlob);
                 downloadBtn.href = url;
                 downloadBtn.classList.remove('hidden');
@@ -669,19 +756,44 @@
                 setTimeout(() => {
                     progressContainer.style.display = 'none';
                     convertBtn.style.display = 'none';
-        }, 1500);
+                }, 1500);
 
-        showMessage('¡Conversión completada! Los archivos están listos para descargar.', 'success');
+                showMessage('¡Conversión completada! Los archivos están listos para descargar.', 'success');
 
-    } catch (error) {
-        console.error('Error en conversión:', error);
-        progressContainer.style.display = 'none';
-        convertBtn.textContent = 'Convertir a Excel';
-        convertBtn.disabled = false;
-        showMessage(`Error en la conversión: ${error.message}`, 'error');
-    }
-}
+            } catch (error) {
+                console.error('Error en conversión:', error);
+                progressContainer.style.display = 'none';
+                convertBtn.textContent = 'Convertir a Excel';
+                convertBtn.disabled = false;
+                showMessage(`Error en la conversión: ${error.message}`, 'error');
+            }
+        }
 
+        async function handleUnificar() {
+            if (selectedExcels.length === 0) return;
+
+            unificarBtn.disabled = true;
+            unificarBtn.textContent = 'Consolidando...';
+            downloadBtnUnificar.classList.add('hidden');
+
+            try {
+                console.log('Unificando consolidados...');
+                const excelBlob = await apiUnificar(selectedExcels);
+
+                const url = window.URL.createObjectURL(excelBlob);
+                downloadBtnUnificar.href = url;
+                downloadBtnUnificar.classList.remove('hidden');
+
+                unificarBtn.style.display = 'none';
+                showMessage('¡Consolidación completada! El archivo está listo para descargar.', 'success');
+
+            } catch (error) {
+                console.error('Error en unificación:', error);
+                unificarBtn.textContent = 'Consolidar';
+                unificarBtn.disabled = false;
+                showMessage(`Error en la unificación: ${error.message}`, 'error');
+            }
+        }
 
         function showMessage(text, type) {
             const message = document.createElement('div');
