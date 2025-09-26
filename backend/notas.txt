@@ -31,6 +31,6 @@
 25/9/25
 -todo ok
 -columna extra separando año y mes OK
--barra de carga realista 
+-barra de carga realista OK
 -relacionar operaciones (necesito diccionario de outsourcing)
--consolidado anual
+-consolidado anual OK

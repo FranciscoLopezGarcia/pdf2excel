@@ -6,7 +6,6 @@ import pandas as pd
 from extractors.universal_extractor import UniversalBankExtractor
 from extractors.unificador import unir_consolidados
 
-
 # Config logging
 logging.basicConfig(
     level=logging.INFO,
@@ -29,16 +28,20 @@ progress_state = {}
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
 
-
 # --- Helper: validar JWT ---
 def token_required(f):
     from functools import wraps
     def wrapper(*args, **kwargs):
         token = None
+        # 1️⃣ Intentar leer desde headers
         if "Authorization" in request.headers:
             auth_header = request.headers["Authorization"]
             if auth_header.startswith("Bearer "):
                 token = auth_header.split(" ")[1]
+        # 2️⃣ Si no está, probar query param (?token=...)
+        if not token:
+            token = request.args.get("token")
+
         if not token:
             logger.warning("Token faltante en request")
             return jsonify({"error": "Token faltante"}), 401
@@ -51,7 +54,6 @@ def token_required(f):
             return jsonify({"error": "Token inválido", "detail": str(e)}), 401
         return f(*args, **kwargs)
     return wraps(f)(wrapper)
-
 
 # --- LOGIN ---
 @app.route("/api/login", methods=["POST"])
@@ -79,27 +81,42 @@ def login():
     logger.info(f"Login exitoso para: {username} (role: {role})")
     return jsonify({"token": token, "role": role})
 
-
-# --- PROGRESO SSE ---
+# Reemplaza el endpoint de progreso en app.py
 @app.route("/api/progress")
 @token_required
 def progress():
     user = request.user["username"]
-
+    
     def generate():
         last_sent = ""
-        while True:
+        timeout_count = 0
+        max_timeout = 3000 
+        
+        while timeout_count < max_timeout:
             time.sleep(1)
+            timeout_count += 1
+            
             state = progress_state.get(user)
             if state and state != last_sent:
                 yield f"data: {state}\n\n"
                 last_sent = state
+                timeout_count = 0  # Reset timeout cuando hay actividad
+            
+            # Si llegamos al 100%, terminamos
             if state and '"progress": 100' in state:
                 break
+        
+        # Mensaje final si hay timeout
+        if timeout_count >= max_timeout:
+            yield f'data: {{"progress": 0, "status": "Timeout - reconecta"}}\n\n'
 
-    return Response(generate(), mimetype="text/event-stream")
-
-
+    response = Response(generate(), mimetype="text/event-stream")
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Authorization')
+    response.headers.add('Cache-Control', 'no-cache')
+    response.headers.add('Connection', 'keep-alive')
+    
+    return response
 # --- CONVERSIÓN ---
 @app.route("/api/convert", methods=["POST"])
 @token_required
@@ -232,4 +249,4 @@ def unificar():
 
 if __name__ == "__main__":
     logger.info("Iniciando servidor Flask...")
-    app.run(port=5000, debug=True, threaded=True)
+    app.run(host="0.0.0.0", port=5000, debug=True, threaded=True)

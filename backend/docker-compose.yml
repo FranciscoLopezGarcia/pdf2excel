@@ -1,10 +1,7 @@
-version: "3.9"
 services:
-  pdf2xls:
+  pdf2excel:
     build: .
-    container_name: pdf2xls
-    volumes:
-      - ./input:/app/input
-      - ./output:/app/output
-    stdin_open: true
-    tty: true
+    container_name: pdf2excel
+    ports:
+      - "5000:5000"
+    restart: unless-stopped

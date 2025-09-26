@@ -1,30 +1,31 @@
-# Imagen base
-FROM python:3.10-slim
+FROM python:3.11-slim
 
-# Evitar preguntas interactivas
+# Evitar prompts interactivos
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Instalar dependencias del sistema
-RUN apt-get update && apt-get install -y \
-    tesseract-ocr \
-    poppler-utils \
-    ghostscript \
+# Instalar dependencias necesarias
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    python3-dev \
+    poppler-utils \
+    tesseract-ocr \
+    tesseract-ocr-spa \
+    libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Directorio de trabajo
 WORKDIR /app
 
-# Copiar requirements e instalar
+# Copiar requirements primero (mejora cacheo de capas)
 COPY requirements.txt .
+
+# Instalar dependencias Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar todo el código
+# Copiar el proyecto
 COPY . .
 
-# Crear carpetas input/output (por si no existen)
-RUN mkdir -p input output
+# Exponer el puerto del backend Flask
+EXPOSE 5000
 
-# Comando por defecto → ejecutar tu script principal
-CMD ["python", "-m", "backend.pdf2xls"]
+# Comando por defecto
+CMD ["python", "app.py"]
