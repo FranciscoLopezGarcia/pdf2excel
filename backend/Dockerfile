@@ -28,4 +28,6 @@ COPY . .
 EXPOSE 5000
 
 # Comando por defecto
-CMD ["python", "app.py"]
+#CMD ["python", "app.py"]
+CMD ["gunicorn", "-b", "0.0.0.0:5000", "app:app", "--workers=3", "--timeout=1800"]
+

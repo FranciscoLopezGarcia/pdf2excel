@@ -36,7 +36,7 @@ class OCRExtractor:
         self.header_keywords = {
             "fecha", "concepto", "descripción", "descripcion", "detalle",
             "importe", "saldo", "débito", "debito", "crédito", "credito",
-            "n°", "nro", "comprobante", "referencia"
+            "n°", "nro", "comprobante", "referencia","Débito","Crédito","Debito", "Credito"
         }
 
         # Patrones robustos para fechas (dd/mm/yyyy, dd-mm-yyyy, dd/mm/yy)

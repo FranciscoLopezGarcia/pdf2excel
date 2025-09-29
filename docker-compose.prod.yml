@@ -1,36 +1,29 @@
-version: "3.9"
-
 services:
   backend:
     build: ./backend
     container_name: pdf2excel-backend
-    expose:
-      - "5000"
-    environment:
-      - FLASK_ENV=production
-      - MAX_CONTENT_LENGTH=200000000  # 200MB
-    volumes:
-      - ./input:/app/input
-      - ./output:/app/output
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/api/logs"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+    networks:
+      - pdf2excel-net
 
   nginx:
-    build:
-      context: .
-      dockerfile: ./nginx/Dockerfile
+    image: nginx:alpine
     container_name: pdf2excel-nginx
     ports:
       - "80:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html
+      - ./nginx/conf.d:/etc/nginx/conf.d
     depends_on:
       - backend
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+    networks:
+      - pdf2excel-net
+
+networks:
+  pdf2excel-net:
+    driver: bridge
