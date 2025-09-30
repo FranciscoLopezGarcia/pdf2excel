@@ -12,18 +12,10 @@ log = logging.getLogger("universal_extractor")
 
 class UniversalBankExtractor:
     def __init__(self):
-        # Universal patterns - mejorados
+        # Universal patterns
         self.date_patterns = [
             r'\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})\b',
             r'\b(\d{2,4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})\b'
-        ]
-        
-        # Patrones de montos mejorados para capturar negativos con sufijo
-        self.amount_patterns = [
-            r'\d{1,3}(?:[.,]\d{3})*[.,]\d{2}-',  # 1.234,56- (negativo con sufijo)
-            r'-?\$?\s*\d{1,3}(?:[.,]\d{3})*[.,]\d{2}',
-            r'-?\$?\s*\d+[.,]\d{2}',
-            r'\d+[.,]\d{2}'
         ]
         
         # Universal column indicators
@@ -35,57 +27,144 @@ class UniversalBankExtractor:
         self.balance_indicators = ['saldo', 'balance', 'total']
         self.amount_indicators = ['importe', 'monto', 'valor']
         self.ocr_extractor = OCRExtractor(lang="spa")
+        
+        # Inferred year for dates without year
+        self.inferred_year = None
 
-    def extract_from_pdf(self, pdf_path: str) -> pd.DataFrame:
-        # PASO 1: Camelot (tablas)
+    def _parse_amount(self, amount_str: str) -> Optional[float]:
+        """
+        Robust amount parser that:
+        - Accepts comma as decimal, dot as thousands
+        - Recognizes negative formats: (1.234,56), -1.234,56, 1.234,56-, −1.234,56
+        - Rejects tokens that are too long (12+ digits)
+        - Returns None if parsing fails
+        - KEEPS the sign (no abs())
+        """
+        if not amount_str:
+            return None
+            
+        clean_str = str(amount_str).strip()
+        
+        # Reject empty or very long tokens (likely account numbers)
+        if not clean_str or len(re.sub(r'[^\d]', '', clean_str)) > 11:
+            return None
+        
+        # Detect parentheses format (1.234,56) = negative
+        is_parentheses = clean_str.startswith('(') and clean_str.endswith(')')
+        if is_parentheses:
+            clean_str = clean_str[1:-1].strip()
+        
+        # Detect negative suffix (1.234,56-)
+        is_negative_suffix = clean_str.endswith('-')
+        if is_negative_suffix:
+            clean_str = clean_str[:-1].strip()
+        
+        # Detect negative prefix (-1.234,56 or unicode minus −)
+        is_negative_prefix = clean_str.startswith('-') or clean_str.startswith('−')
+        if is_negative_prefix:
+            clean_str = clean_str[1:].strip()
+        
+        # Remove currency symbols and whitespace
+        clean_str = re.sub(r'[$\s]', '', clean_str)
+        
+        # Check if what remains is a valid monetary format
+        # Valid: digits with optional dots/commas as separators
+        if not re.match(r'^\d{1,3}(?:[.,]\d{3})*[.,]\d{2}$|^\d+[.,]\d{2}$', clean_str):
+            return None
+        
+        # Determine decimal separator (last comma or dot with exactly 2 digits after)
+        if ',' in clean_str and '.' in clean_str:
+            # Both present - last one with 2 digits is decimal
+            last_comma_pos = clean_str.rfind(',')
+            last_dot_pos = clean_str.rfind('.')
+            
+            if last_comma_pos > last_dot_pos:
+                # Comma is decimal (Argentine format: 1.234,56)
+                clean_str = clean_str.replace('.', '').replace(',', '.')
+            else:
+                # Dot is decimal (US format: 1,234.56)
+                clean_str = clean_str.replace(',', '')
+        elif ',' in clean_str:
+            # Only comma - check if decimal or thousands
+            comma_pos = clean_str.rfind(',')
+            digits_after = len(clean_str) - comma_pos - 1
+            if digits_after == 2:
+                # Decimal separator
+                clean_str = clean_str.replace(',', '.')
+            else:
+                # Thousands separator (unusual but handle it)
+                clean_str = clean_str.replace(',', '')
+        # else: only dots or no separators - assume US format or no thousands
+        
+        try:
+            result = float(clean_str)
+            # Apply negative sign if detected
+            if is_parentheses or is_negative_suffix or is_negative_prefix:
+                result = -result
+            return result
+        except (ValueError, OverflowError):
+            return None
+
+    def _to_float_strict(self, value) -> Optional[float]:
+        """
+        Centralized numeric conversion.
+        - If string: parse with _parse_amount
+        - If float/int: pass through
+        - Otherwise: return None
+        """
+        if isinstance(value, str):
+            return self._parse_amount(value)
+        elif isinstance(value, (int, float)):
+            return float(value)
+        else:
+            return None
+
+    def extract_from_pdf(self, pdf_path: str, filename_hint: str = None) -> pd.DataFrame:
+        """
+        Main extraction pipeline: Camelot → PDFPlumber → OCR
+        filename_hint: used for year inference (e.g. "Marzo 2025")
+        """
+        self.inferred_year = self._extract_year_from_filename(filename_hint or pdf_path)
+        
+        # PASO 1: Camelot (tables)
         log.info(f"🔍 Intentando extracción con Camelot (tablas)...")
         try:
             rows = self._extract_from_tables(pdf_path)
             if rows:
                 log.info(f"✅ Camelot exitoso: {len(rows)} transacciones")
-                return self._normalize_output(rows)
-            else:
-                log.info("❌ Camelot no encontró tablas válidas")
+                return self._normalize_output(rows, pdf_path)
         except Exception as e:
             log.warning(f"❌ Camelot falló: {e}")
 
-        # PASO 2: PDFPlumber (texto)
+        # PASO 2: PDFPlumber (text)
         log.info(f"🔍 Intentando extracción con PDFPlumber (texto)...")
         try:
             rows = self._extract_from_text(pdf_path)
             if rows:
                 log.info(f"✅ PDFPlumber exitoso: {len(rows)} transacciones")
-                return self._normalize_output(rows)
-            else:
-                log.info("❌ PDFPlumber no encontró transacciones válidas")
+                return self._normalize_output(rows, pdf_path)
         except Exception as e:
             log.warning(f"❌ PDFPlumber falló: {e}")
 
         # PASO 3: OCR (fallback final)
         log.info(f"🔍 Intentando extracción con OCR (imágenes)...")
         try:
-            # Usar extract_text_pages en lugar de extract_text_from_pdf
             pages_data = self.ocr_extractor.extract_text_pages(pdf_path)
             if not pages_data:
                 log.warning("❌ OCR no detectó páginas relevantes")
                 return pd.DataFrame()
             
             log.info(f"📄 OCR detectó {len(pages_data)} páginas relevantes")
-            
-            # Concatenar texto de todas las páginas
             ocr_text = "\n\n".join([f"--- Página {p} ---\n{t}" for p, t in pages_data])
             
             if not ocr_text.strip():
                 log.warning("❌ OCR devolvió texto vacío")
                 return pd.DataFrame()
             
-            log.info(f"📝 OCR extrajo {len(ocr_text)} caracteres de texto")
-            
-            # Parse del texto OCR
             rows = self._parse_text_content_improved(ocr_text)
             if rows:
                 log.info(f"✅ OCR exitoso: {len(rows)} transacciones extraídas")
-                return self._normalize_output(rows)
+                return self._normalize_output(rows, pdf_path)
             else:
                 log.warning("❌ OCR no pudo parsear transacciones del texto")
                 
@@ -94,6 +173,13 @@ class UniversalBankExtractor:
 
         log.error("🚫 Todos los métodos de extracción fallaron")
         return pd.DataFrame()
+
+    def _extract_year_from_filename(self, filename: str) -> Optional[int]:
+        """Extract year from filename like 'Marzo 2025' or '2025-03'"""
+        year_match = re.search(r'20\d{2}', filename)
+        if year_match:
+            return int(year_match.group(0))
+        return None
 
     def _extract_from_tables(self, pdf_path: str) -> List[Dict]:
         """Extract using camelot table detection"""
@@ -115,15 +201,15 @@ class UniversalBankExtractor:
             column_map = self._map_columns(headers)
             
             # Process data rows
-            for _, row in df.iloc[header_row + 1:].iterrows():
-                parsed_row = self._parse_table_row(row, column_map)
+            for idx, row in df.iloc[header_row + 1:].iterrows():
+                parsed_row = self._parse_table_row(row, column_map, original_line=str(row.tolist()))
                 if self._is_valid_transaction(parsed_row):
                     all_rows.append(parsed_row)
                     
         return all_rows
 
     def _extract_from_text(self, pdf_path: str) -> List[Dict]:
-        """Extract using text parsing - mejorado para formato tabular"""
+        """Extract using PDFPlumber text parsing - IMPLEMENTED"""
         full_text = ""
         try:
             with pdfplumber.open(pdf_path) as doc:
@@ -131,75 +217,34 @@ class UniversalBankExtractor:
                     text = page.extract_text() or ""
                     full_text += text + "\n"
         except Exception as e:
-            log.error(f"PDF reading failed: {e}")
+            log.error(f"PDFPlumber reading failed: {e}")
             return []
 
+        if not full_text.strip():
+            return []
+            
         return self._parse_text_content_improved(full_text)
 
     def _parse_text_content_improved(self, text: str) -> List[Dict]:
-        """Parse transactions from raw text - mejorado para manejar formato tabular"""
+        """Parse transactions from raw text"""
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         transactions = []
         
-        # Buscar secciones de transacciones
-        in_transaction_section = False
-        header_found = False
-        
-        for line in lines:
-            # Skip headers and irrelevant lines
+        for line_num, line in enumerate(lines, 1):
             if self._should_skip_line(line):
                 continue
             
-            # Detectar inicio de sección de transacciones
-            if self._is_transaction_header(line):
-                in_transaction_section = True
-                header_found = True
-                continue
-            
-            # Si encontramos otra sección, salir
-            if header_found and self._is_other_section(line):
-                in_transaction_section = False
-                continue
-                
-            # Si no estamos en sección de transacciones, buscar líneas con fecha
-            if not in_transaction_section:
-                if not self._line_has_date(line):
-                    continue
-            
-            # Parse línea como transacción
             transaction = self._parse_transaction_line(line)
             if transaction:
+                transaction['_line_num'] = line_num
+                transaction['_original_line'] = line
                 transactions.append(transaction)
                 
         return transactions
 
-    def _is_transaction_header(self, line: str) -> bool:
-        """Detecta si la línea es un header de transacciones"""
-        line_lower = line.lower()
-        header_indicators = ['fecha', 'concepto', 'debitos', 'creditos', 'saldo']
-        found_indicators = sum(1 for indicator in header_indicators if indicator in line_lower)
-        return found_indicators >= 2
-
-    def _is_other_section(self, line: str) -> bool:
-        """Detecta si la línea indica el inicio de otra sección"""
-        line_lower = line.lower()
-        section_indicators = [
-            'debitos automaticos', 'transferencias recibidas', 'transferencias enviadas',
-            'detalle - comision', 'situacion impositiva', 'retenciones'
-        ]
-        return any(indicator in line_lower for indicator in section_indicators)
-
-    def _line_has_date(self, line: str) -> bool:
-        """Verifica si la línea contiene una fecha"""
-        for pattern in self.date_patterns:
-            if re.search(pattern, line):
-                return True
-        return False
-
     def _parse_transaction_line(self, line: str) -> Optional[Dict]:
-        """Parse una línea individual como transacción - mejorado para formato tabular"""
-        
-        # Buscar fecha
+        """Parse individual transaction line"""
+        # Find date
         date_match = None
         for pattern in self.date_patterns:
             match = re.search(pattern, line)
@@ -214,49 +259,35 @@ class UniversalBankExtractor:
         if not fecha:
             return None
 
-        # Extraer todos los montos de la línea - MEJORADO
+        # Extract all amounts
         amounts = []
-        amount_positions = []
-        
-        # Buscar montos con sufijo negativo primero (prioridad)
-        negative_suffix_pattern = r'\d{1,3}(?:[.,]\d{3})*[.,]\d{2}-'
-        for match in re.finditer(negative_suffix_pattern, line):
+        for match in re.finditer(r'-?\$?\s*\d{1,3}(?:[.,]\d{3})*[.,]\d{2}[-]?|\(\d{1,3}(?:[.,]\d{3})*[.,]\d{2}\)', line):
             amount = self._parse_amount(match.group(0))
-            if amount != 0:
+            if amount is not None:
                 amounts.append(amount)
-                amount_positions.append((match.start(), match.end()))
-        
-        # Luego buscar otros patrones, evitando posiciones ya ocupadas
-        occupied_ranges = set()
-        for start, end in amount_positions:
-            occupied_ranges.update(range(start, end))
-            
-        for pattern in self.amount_patterns[1:]:  # Skip the first one (already processed)
-            for match in re.finditer(pattern, line):
-                if any(pos in occupied_ranges for pos in range(match.start(), match.end())):
-                    continue  # Skip overlapping matches
-                    
-                amount = self._parse_amount(match.group(0))
-                if amount != 0:
-                    amounts.append(amount)
-                    amount_positions.append((match.start(), match.end()))
-                    occupied_ranges.update(range(match.start(), match.end()))
 
-        # Remover fecha y montos para obtener el detalle
+        # Remove date and amounts to get detail
         clean_line = line
         clean_line = re.sub(date_match.re.pattern, '', clean_line, count=1)
-        
-        # Remover montos en orden inverso para no afectar posiciones
-        for start, end in sorted(amount_positions, reverse=True):
-            clean_line = clean_line[:start-len(line)+len(clean_line)] + clean_line[end-len(line)+len(clean_line):]
+        for pattern in [r'-?\$?\s*\d{1,3}(?:[.,]\d{3})*[.,]\d{2}[-]?', r'\(\d{1,3}(?:[.,]\d{3})*[.,]\d{2}\)']:
+            clean_line = re.sub(pattern, '', clean_line)
         
         detalle = self._clean_text(clean_line)
         
-        # Categorizar montos basado en la estructura de la línea
         return self._categorize_amounts_improved(fecha, detalle, amounts, line)
 
     def _categorize_amounts_improved(self, fecha: str, detalle: str, amounts: List[float], original_line: str) -> Optional[Dict]:
-        """Categoriza montos mejorado - análisis de estructura más preciso"""
+        """
+        Simplified column categorization:
+        1. Clean amounts list (remove None)
+        2. If detalle contains 'saldo anterior/actual/al cierre' → assign to saldo
+        3. Two numbers: first=movement (neg→debit, pos→credit), second=saldo
+        4. Three+ numbers: last=saldo, others by sign (neg→debit, pos→credit)
+        5. Never move negative saldo into debits/credits
+        """
+        # Clean amounts list
+        amounts = [a for a in amounts if a is not None and a != 0]
+        
         if not amounts:
             return None
             
@@ -264,29 +295,24 @@ class UniversalBankExtractor:
             'fecha': fecha,
             'detalle': detalle,
             'referencia': self._extract_reference(detalle),
-            'debitos': '',
-            'creditos': '',
-            'saldo': ''
+            'debitos': None,
+            'creditos': None,
+            'saldo': None
         }
         
-        # Análisis contextual
         detalle_lower = detalle.lower()
         original_lower = original_line.lower()
         
-        # DETECTAR LÍNEAS DE SALDO - PRIORIDAD MÁXIMA
-        is_saldo_line = any(phrase in detalle_lower for phrase in [
-            'saldo anterior', 'saldo actual', 'saldo al cierre', 'saldo del periodo'
-        ]) or any(phrase in original_lower for phrase in [
-            'saldo anterior', 'saldo actual', 'saldo al cierre', 'saldo del periodo'
-        ])
+        # Check for saldo keywords
+        saldo_keywords = ['saldo anterior', 'saldo actual', 'saldo al cierre', 'saldo del periodo', 'saldo al', 'saldo a ']
+        is_saldo_line = any(kw in detalle_lower or kw in original_lower for kw in saldo_keywords)
         
-        # Si es línea de saldo, todo va a saldo
         if is_saldo_line:
-            # Tomar el primer/único monto como saldo
-            transaction['saldo'] = self._format_amount(amounts[0])
+            # All amounts go to saldo (preserve sign)
+            transaction['saldo'] = amounts[0]
             return transaction
         
-        # Detectar tipo de transacción por contexto
+        # Detect context
         is_debit_context = any(word in detalle_lower for word in [
             'debito', 'cargo', 'comision', 'impuesto', 'transferencia enviada', 
             'retiro', 'pago', 'automatico', 'imp.', 'iva', 'interes', 'mantenimiento',
@@ -298,69 +324,54 @@ class UniversalBankExtractor:
             'transferencia entre', 'credito por transferencia'
         ])
 
-        # LÓGICA MEJORADA para múltiples montos (NO saldo)
         if len(amounts) == 1:
+            # Single amount: classify by sign or context
             amount = amounts[0]
-            # Negativos van a débito SOLO si no es línea de saldo
             if amount < 0 or is_debit_context:
-                transaction['debitos'] = self._format_amount(abs(amount))
+                transaction['debitos'] = abs(amount)
             else:
-                transaction['creditos'] = self._format_amount(abs(amount))
+                transaction['creditos'] = abs(amount)
                 
         elif len(amounts) == 2:
-            # Formato típico: movimiento + saldo
-            movement, balance = amounts[0], amounts[1]
+            # Two amounts: movement + saldo
+            movement, saldo = amounts[0], amounts[1]
             
-            # El movimiento va según contexto (no por signo si hay contexto)
             if is_debit_context:
-                transaction['debitos'] = self._format_amount(abs(movement))
+                transaction['debitos'] = abs(movement)
             elif is_credit_context:
-                transaction['creditos'] = self._format_amount(abs(movement))
+                transaction['creditos'] = abs(movement)
             else:
-                # Solo usar signo si no hay contexto claro
+                # Use sign
                 if movement < 0:
-                    transaction['debitos'] = self._format_amount(abs(movement))
+                    transaction['debitos'] = abs(movement)
                 else:
-                    transaction['creditos'] = self._format_amount(abs(movement))
+                    transaction['creditos'] = abs(movement)
             
-            # El saldo va tal como viene (puede ser negativo)
-            transaction['saldo'] = self._format_amount(balance)
+            # Saldo preserves sign
+            transaction['saldo'] = saldo
             
-        elif len(amounts) >= 3:
-            # Múltiples montos - LÓGICA MEJORADA
-            # Para Patagonia: típicamente [pequeño_imp, movimiento_principal, saldo]
-            # El saldo es generalmente el último o el más grande en valor absoluto
+        else:
+            # Three or more: last is saldo, others by sign
+            saldo = amounts[-1]
+            movements = amounts[:-1]
             
-            # Buscar el saldo (último monto o el de mayor magnitud)
-            balance_candidate = amounts[-1]  # Último por defecto
+            # Classify movements
+            debits = [abs(m) for m in movements if m < 0]
+            credits = [abs(m) for m in movements if m >= 0]
             
-            # Si el último es muy pequeño comparado con otros, buscar el mayor
-            max_amount = max(amounts, key=abs)
-            if abs(amounts[-1]) < abs(max_amount) / 10:  # Si el último es <10% del mayor
-                balance_candidate = max_amount
-            
-            # El movimiento principal es el que no es saldo y no es muy pequeño
-            movement_candidates = [a for a in amounts if a != balance_candidate]
-            if movement_candidates:
-                # Tomar el mayor de los candidatos restantes
-                movement = max(movement_candidates, key=abs)
+            # Use context if available
+            if is_debit_context and debits:
+                transaction['debitos'] = sum(debits)
+            elif is_credit_context and credits:
+                transaction['creditos'] = sum(credits)
             else:
-                movement = amounts[0]
+                # Default: sum by sign
+                if debits:
+                    transaction['debitos'] = sum(debits)
+                if credits:
+                    transaction['creditos'] = sum(credits)
             
-            # Categorizar movimiento según contexto
-            if is_debit_context:
-                transaction['debitos'] = self._format_amount(abs(movement))
-            elif is_credit_context:
-                transaction['creditos'] = self._format_amount(abs(movement))
-            else:
-                # Usar signo para decidir
-                if movement < 0:
-                    transaction['debitos'] = self._format_amount(abs(movement))
-                else:
-                    transaction['creditos'] = self._format_amount(abs(movement))
-            
-            # Saldo respeta signo original (puede ser negativo)
-            transaction['saldo'] = self._format_amount(balance_candidate)
+            transaction['saldo'] = saldo
         
         return transaction
 
@@ -371,7 +382,7 @@ class UniversalBankExtractor:
             r'REF\.?\s*(\d+)', 
             r'REFERENCIA\s*(\d+)',
             r'COMPROBANTE\s*(\d+)',
-            r'(\d{8,})'  # Long numbers
+            r'(\d{8,})'
         ]
         
         for pattern in patterns:
@@ -379,6 +390,87 @@ class UniversalBankExtractor:
             if match:
                 return match.group(1)
         return ''
+
+    def _parse_table_row(self, row: pd.Series, column_map: Dict[int, str], original_line: str) -> Dict:
+        """Parse a single table row - uses _to_float_strict"""
+        transaction = {
+            'fecha': '',
+            'detalle': '',
+            'referencia': '',
+            'debitos': None,
+            'creditos': None,
+            'saldo': None,
+            '_original_line': original_line
+        }
+        
+        for i, value in enumerate(row):
+            field = column_map.get(i)
+            if not field:
+                continue
+                
+            value_str = str(value).strip()
+            
+            if field == 'fecha':
+                transaction['fecha'] = self._normalize_date(value_str)
+            elif field == 'detalle':
+                transaction['detalle'] = self._clean_text(value_str)
+            elif field == 'referencia':
+                transaction['referencia'] = value_str
+            elif field in ['debitos', 'creditos', 'saldo']:
+                amount = self._to_float_strict(value_str)
+                if amount is not None:
+                    if field == 'saldo':
+                        # Preserve sign for saldo
+                        transaction[field] = amount
+                    else:
+                        # Debits/credits are always positive
+                        transaction[field] = abs(amount)
+            elif field == 'importe':
+                amount = self._to_float_strict(value_str)
+                if amount is not None:
+                    if amount < 0:
+                        transaction['debitos'] = abs(amount)
+                    else:
+                        transaction['creditos'] = amount
+        
+        return transaction
+
+    def _normalize_date(self, date_str: str) -> str:
+        """
+        Normalize date to DD/MM/YYYY format.
+        When date lacks year, infer from:
+        1. Previously parsed fecha column
+        2. Filename hint
+        3. Current year
+        """
+        if not date_str:
+            return ""
+            
+        date_clean = re.sub(r'[^\d\/\-\.]', '', date_str)
+        
+        formats = ['%d/%m/%Y', '%d/%m/%y', '%d-%m-%Y', '%d-%m-%y', 
+                  '%d.%m.%Y', '%d.%m.%y', '%Y/%m/%d', '%Y-%m-%d']
+        
+        for fmt in formats:
+            try:
+                dt = datetime.strptime(date_clean, fmt)
+                return dt.strftime('%d/%m/%Y')
+            except:
+                continue
+        
+        # Try parsing DD/MM without year
+        match = re.match(r'(\d{1,2})[/\-\.](\d{1,2})$', date_clean)
+        if match:
+            day, month = match.groups()
+            year = self.inferred_year or datetime.now().year
+            log.warning(f"Fecha sin año detectada: {date_clean}, usando año {year}")
+            try:
+                dt = datetime(year, int(month), int(day))
+                return dt.strftime('%d/%m/%Y')
+            except:
+                pass
+        
+        return date_clean
 
     def _find_header_row(self, df: pd.DataFrame) -> Optional[int]:
         """Find the header row in a dataframe"""
@@ -418,126 +510,6 @@ class UniversalBankExtractor:
                 
         return mapping
 
-    def _parse_table_row(self, row: pd.Series, column_map: Dict[int, str]) -> Dict:
-        """Parse a single table row into standardized format"""
-        transaction = {
-            'fecha': '',
-            'detalle': '',
-            'referencia': '',
-            'debitos': '',
-            'creditos': '',
-            'saldo': ''
-        }
-        
-        for i, value in enumerate(row):
-            field = column_map.get(i)
-            if not field:
-                continue
-                
-            value_str = str(value).strip()
-            
-            if field == 'fecha':
-                transaction['fecha'] = self._normalize_date(value_str)
-            elif field == 'detalle':
-                transaction['detalle'] = self._clean_text(value_str)
-            elif field == 'referencia':
-                transaction['referencia'] = value_str
-            elif field in ['debitos', 'creditos', 'saldo']:
-                amount = self._parse_amount(value_str)
-                if amount != 0:
-                    transaction[field] = self._format_amount(abs(amount))
-            elif field == 'importe':
-                amount = self._parse_amount(value_str)
-                if amount != 0:
-                    if amount < 0:
-                        transaction['debitos'] = self._format_amount(abs(amount))
-                    else:
-                        transaction['creditos'] = self._format_amount(amount)
-        
-        return transaction
-
-    def _normalize_date(self, date_str: str) -> str:
-        """Normalize date to DD/MM/YYYY format"""
-        if not date_str:
-            return ""
-            
-        date_clean = re.sub(r'[^\d\/\-\.]', '', date_str)
-        
-        formats = ['%d/%m/%Y', '%d/%m/%y', '%d-%m-%Y', '%d-%m-%y', 
-                  '%d.%m.%Y', '%d.%m.%y', '%Y/%m/%d', '%Y-%m-%d']
-        
-        for fmt in formats:
-            try:
-                dt = datetime.strptime(date_clean, fmt)
-                return dt.strftime('%d/%m/%Y')
-            except:
-                continue
-        return date_clean
-
-    def _parse_amount(self, amount_str: str) -> float:
-        """Parse amount string to float - MEJORADO para negativos con sufijo"""
-        if not amount_str:
-            return 0.0
-            
-        clean_str = str(amount_str).strip()
-        
-        # Detectar negativo con sufijo ANTES de limpiar (1.234,56-)
-        negative_suffix = clean_str.endswith('-')
-        
-        # Remover caracteres no numéricos excepto separadores y signo
-        clean_str = re.sub(r'[^\d\-\.,]', '', clean_str)
-        
-        if not clean_str or clean_str in ['-', '.', ',']:
-            return 0.0
-        
-        # Remover sufijo negativo si existe
-        if negative_suffix and clean_str.endswith('-'):
-            clean_str = clean_str[:-1]
-            
-        # Detectar negativo con prefijo
-        negative_prefix = clean_str.startswith('-')
-        if negative_prefix:
-            clean_str = clean_str[1:]
-        
-        # Determinar separador decimal
-        if ',' in clean_str and '.' in clean_str:
-            if clean_str.rfind(',') > clean_str.rfind('.'):
-                # Coma es decimal (formato argentino)
-                clean_str = clean_str.replace('.', '').replace(',', '.')
-            else:
-                # Punto es decimal (formato US)
-                clean_str = clean_str.replace(',', '')
-        elif ',' in clean_str:
-            # Solo coma - verificar si es decimal
-            comma_parts = clean_str.split(',')
-            if len(comma_parts) == 2 and len(comma_parts[1]) == 2:
-                # Es decimal: 1234,56
-                clean_str = clean_str.replace(',', '.')
-            else:
-                # Es separador de miles: 1,234
-                clean_str = clean_str.replace(',', '')
-        
-        try:
-            result = float(clean_str)
-            if negative_suffix or negative_prefix:
-                result = -result
-            return result
-        except:
-            return 0.0
-
-    def _format_amount(self, amount: float) -> str:
-        """Format amount with Argentine format"""
-        try:
-            if amount < 0:
-                formatted = f"{abs(amount):,.2f}"
-                formatted = formatted.replace(',', 'X').replace('.', ',').replace('X', '.')
-                return f"-{formatted}"
-            else:
-                formatted = f"{amount:,.2f}"
-                return formatted.replace(',', 'X').replace('.', ',').replace('X', '.')
-        except:
-            return str(amount)
-
     def _clean_text(self, text: str) -> str:
         """Clean and normalize text"""
         if not text:
@@ -562,11 +534,9 @@ class UniversalBankExtractor:
             r'^\s*banco',
             r'^\s*cbu:',
             r'^\s*cuenta corriente en pesos',
-            r'^\s*saldo anterior',
-            r'^\s*saldo actual', 
             r'movimientos pendientes',
-            r'^\s*\d+\s*$',  # Solo números de página
-            r'^\s*subcta\s+suc\s+mda',  # Headers de subcuenta
+            r'^\s*\d+\s*$',
+            r'^\s*subcta\s+suc\s+mda',
             r'^\s*estado de cuentas'
         ]
         
@@ -580,10 +550,15 @@ class UniversalBankExtractor:
         if not transaction.get('detalle'):
             return False
         # Must have at least one amount
-        return any(transaction.get(field) for field in ['debitos', 'creditos', 'saldo'])
+        return any(transaction.get(field) is not None for field in ['debitos', 'creditos', 'saldo'])
 
-    def _normalize_output(self, transactions: List[Dict]) -> pd.DataFrame:
-        """Convert transactions to standardized DataFrame"""
+    def _normalize_output(self, transactions: List[Dict], pdf_path: str = None) -> pd.DataFrame:
+        """
+        Convert transactions to standardized DataFrame with:
+        - Proper date parsing with year inference
+        - Balance validation and flagging
+        - observaciones column for problems
+        """
         if not transactions:
             return pd.DataFrame()
             
@@ -593,19 +568,101 @@ class UniversalBankExtractor:
         required_columns = ['fecha', 'detalle', 'referencia', 'debitos', 'creditos', 'saldo']
         for col in required_columns:
             if col not in df.columns:
-                df[col] = ''
+                df[col] = None if col in ['debitos', 'creditos', 'saldo'] else ''
+        
+        # Parse dates with year inference
+        df['fecha'] = df['fecha'].apply(lambda x: self._parse_date_with_year(x, pdf_path))
+        
+        # Extract mes and año from parsed fecha
+        df['fecha_dt'] = pd.to_datetime(df['fecha'], format='%d/%m/%Y', errors='coerce', dayfirst=True)
+        df['mes'] = df['fecha_dt'].dt.month.fillna(0).astype(int)
+        df['año'] = df['fecha_dt'].dt.year.fillna(0).astype(int)
+        
+        # Convert amounts - already parsed as floats
+        for col in ['debitos', 'creditos', 'saldo']:
+            df[col] = df[col].apply(lambda x: float(x) if x is not None else 0.0)
+        
+        # Add observaciones column
+        df['observaciones'] = ''
+        
+        # Validate and flag problems
+        df = self._validate_balance(df)
+        df = self._flag_problem_rows(df)
         
         # Reorder columns
-        df['mes'] = pd.to_datetime(df['fecha'], errors='coerce').dt.month.fillna(0).astype(int)
-        df['año'] = pd.to_datetime(df['fecha'], errors='coerce').dt.year.fillna(0).astype(int)
-
-        ordered_columns = ['fecha', 'mes', 'año', 'detalle', 'referencia', 'debitos', 'creditos', 'saldo']
+        ordered_columns = ['fecha', 'mes', 'año', 'detalle', 'referencia', 'debitos', 'creditos', 'saldo', 'observaciones']
         df = df[ordered_columns]
         
-        # Clean up empty strings in amount columns
-        for col in ['debitos', 'creditos', 'saldo']:
-            df[col] = df[col].replace('', '0,00')
-            df[col] = df[col].str.replace('.', '', regex=False).str.replace(',', '.',regex=False)
-            df[col] = pd.to_numeric(df[col],errors='coerce').fillna(0.0)
+        return df
+
+    def _parse_date_with_year(self, date_str: str, pdf_path: str = None) -> str:
+        """Parse date ensuring year is present"""
+        if not date_str:
+            return ""
+        
+        # If already has year, return as-is
+        if re.search(r'/\d{4}$', date_str):
+            return date_str
+        
+        # Missing year - infer it
+        match = re.match(r'(\d{1,2})/(\d{1,2})$', date_str)
+        if match:
+            day, month = match.groups()
+            year = self.inferred_year or datetime.now().year
+            log.warning(f"Año inferido {year} para fecha {date_str}")
+            return f"{day.zfill(2)}/{month.zfill(2)}/{year}"
+        
+        return date_str
+
+    def _validate_balance(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Validate balance consistency and flag inconsistencies.
+        Formula: saldo[i] should equal saldo[i-1] + creditos[i] - debitos[i]
+        """
+        for i in range(1, len(df)):
+            prev_saldo = df.loc[i-1, 'saldo']
+            current_credito = df.loc[i, 'creditos']
+            current_debito = df.loc[i, 'debitos']
+            current_saldo = df.loc[i, 'saldo']
             
+            expected_saldo = prev_saldo + current_credito - current_debito
+            
+            # Allow small rounding errors (0.01)
+            if abs(current_saldo - expected_saldo) > 0.01:
+                msg = f"Inconsistencia – revisar (esperado: {expected_saldo:.2f}, actual: {current_saldo:.2f})"
+                if df.loc[i, 'observaciones']:
+                    df.loc[i, 'observaciones'] += f"; {msg}"
+                else:
+                    df.loc[i, 'observaciones'] = msg
+                
+                log.warning(f"Fila {i+1}: {msg}")
+                if '_original_line' in df.columns:
+                    log.warning(f"  Línea original: {df.loc[i, '_original_line']}")
+        
+        return df
+
+    def _flag_problem_rows(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Flag rows with potential problems"""
+        for i in range(len(df)):
+            # Flag rows with all zeros
+            if (df.loc[i, 'debitos'] == 0 and 
+                df.loc[i, 'creditos'] == 0 and 
+                df.loc[i, 'saldo'] == 0):
+                msg = "Todos los montos en cero"
+                if df.loc[i, 'observaciones']:
+                    df.loc[i, 'observaciones'] += f"; {msg}"
+                else:
+                    df.loc[i, 'observaciones'] = msg
+            
+            # Flag rows where detalle is mostly numeric (likely corruption)
+            detalle = str(df.loc[i, 'detalle'])
+            if detalle and len(detalle) > 5:
+                digit_ratio = sum(c.isdigit() for c in detalle) / len(detalle)
+                if digit_ratio > 0.7:
+                    msg = "Detalle parece corrupto (mayoría dígitos)"
+                    if df.loc[i, 'observaciones']:
+                        df.loc[i, 'observaciones'] += f"; {msg}"
+                    else:
+                        df.loc[i, 'observaciones'] = msg
+        
         return df

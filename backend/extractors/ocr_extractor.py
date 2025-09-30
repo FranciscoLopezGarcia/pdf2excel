@@ -36,7 +36,7 @@ class OCRExtractor:
         self.header_keywords = {
             "fecha", "concepto", "descripción", "descripcion", "detalle",
             "importe", "saldo", "débito", "debito", "crédito", "credito",
-            "n°", "nro", "comprobante", "referencia","Débito","Crédito","Debito", "Credito"
+            "n°", "nro", "comprobante", "referencia", "Débito", "Crédito", "Debito", "Credito"
         }
 
         # Patrones robustos para fechas (dd/mm/yyyy, dd-mm-yyyy, dd/mm/yy)
@@ -48,12 +48,12 @@ class OCRExtractor:
 
     # ---------- PREPROCESO DE IMAGEN ----------
     def _preprocess(self, img: Image.Image, scale: float = 1.35, thr: int = 180) -> Image.Image:
-        """Mejora la imagen para OCR: escala, gris, autocontraste y binariza."""
+        """Mejora la imagen para OCR: escala, gris, autocontrast y binariza."""
         w, h = img.size
         if scale != 1.0:
             img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
         img = img.convert("L")
-        img = ImageOps.autocontrast(img)
+        img = ImageOps.autocontrast(img)  # FIXED: was "autocontraste"
         # Binarizado simple
         img = img.point(lambda p: 255 if p > thr else 0)
         return img
@@ -108,10 +108,10 @@ class OCRExtractor:
             try:
                 img_p = self._preprocess(img, scale=1.25, thr=180)
                 raw = pytesseract.image_to_string(img_p, lang=self.lang, config=self.tess_config)
-                #######
+                # Safe encoding conversion
                 safe_text = raw.encode("latin-1", errors="ignore").decode("latin-1", errors="ignore")
                 text = safe_text
-                #######
+                
                 is_rel, stats = self._es_pagina_relevante(text)
                 logger.info(
                     f"Página {i} quick → relev={is_rel} | headers={stats['headers']} "
@@ -141,10 +141,10 @@ class OCRExtractor:
                 img = imgs_full[i - 1]  # mismo índice de página
                 img_p = self._preprocess(img, scale=1.35, thr=180)
                 raw = pytesseract.image_to_string(img_p, lang=self.lang, config=self.tess_config)
-                #######
+                # Safe encoding conversion
                 safe_text = raw.encode("latin-1", errors="ignore").decode("latin-1", errors="ignore")
                 text = safe_text
-                #######
+                
                 resultados.append((i, text))
                 logger.info(f"Página {i} full → {len(text)} chars")
             except Exception as e:

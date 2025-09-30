@@ -149,7 +149,8 @@ def convert():
         )
 
         try:
-            df = extractor.extract_from_pdf(temp_path)
+            # Pass filename_hint for year inference
+            df = extractor.extract_from_pdf(temp_path, filename_hint=filename)
 
             if df is None or df.empty:
                 msg = f"{filename}: ERROR - Sin transacciones"
@@ -157,16 +158,58 @@ def convert():
                 log_messages.append(msg)
             else:
                 excel_bytes = io.BytesIO()
-                df.to_excel(excel_bytes, index=False, sheet_name="Transactions")
+                
+                # Format amounts to Argentine format
+                df_export = df.copy()
+                for col in ['debitos', 'creditos', 'saldo']:
+                    if col in df_export.columns:
+                        df_export[col] = df_export[col].apply(
+                            lambda x: f"{x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.') 
+                            if pd.notna(x) else '0,00'
+                        )
+                
+                df_export.to_excel(excel_bytes, index=False, sheet_name="Transactions")
+                excel_bytes.seek(0)
+                
+                # Apply highlighting
+                try:
+                    from openpyxl import load_workbook
+                    from openpyxl.styles import PatternFill
+                    
+                    wb = load_workbook(excel_bytes)
+                    ws = wb.active
+                    
+                    headers = [cell.value for cell in ws[1]]
+                    if 'observaciones' in headers:
+                        obs_col_idx = headers.index('observaciones') + 1
+                        yellow_fill = PatternFill(start_color='FFFF00', end_color='FFFF00', fill_type='solid')
+                        
+                        for row_idx in range(2, ws.max_row + 1):
+                            obs_cell = ws.cell(row=row_idx, column=obs_col_idx)
+                            if obs_cell.value and str(obs_cell.value).strip():
+                                for col_idx in range(1, ws.max_column + 1):
+                                    ws.cell(row=row_idx, column=col_idx).fill = yellow_fill
+                        
+                        excel_bytes = io.BytesIO()
+                        wb.save(excel_bytes)
+                        excel_bytes.seek(0)
+                except Exception as e:
+                    logger.warning(f"Could not apply Excel formatting: {e}")
+                
                 zipf.writestr(f"{os.path.splitext(filename)[0]}.xlsx", excel_bytes.getvalue())
                 df["archivo"] = filename
                 combined.append(df)
-                log_messages.append(f"{filename}: OK - {len(df)} filas exportadas")
+                
+                # Count problems for logging
+                problem_count = df['observaciones'].apply(lambda x: bool(str(x).strip())).sum()
+                msg = f"{filename}: OK - {len(df)} filas ({problem_count} con problemas)"
+                log_messages.append(msg)
 
         except Exception as e:
             msg = f"{filename}: ERROR - {str(e)}"
             zipf.writestr(f"{filename}-ERROR.txt", msg)
             log_messages.append(msg)
+            logger.error(f"Error procesando {filename}: {e}", exc_info=True)
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
