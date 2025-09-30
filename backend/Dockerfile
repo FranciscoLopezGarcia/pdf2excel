@@ -1,9 +1,10 @@
+
 FROM python:3.11-slim
 
-# Evitar prompts interactivos
+# Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Instalar dependencias necesarias
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     poppler-utils \
@@ -12,22 +13,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Directorio de trabajo
+# Set work directory
 WORKDIR /app
 
-# Copiar requirements primero (mejora cacheo de capas)
-COPY requirements.txt .
+# Copy requirements first for better cache
+COPY requirements.txt ./
 
-# Instalar dependencias Python
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar el proyecto
+# Copy all project files
 COPY . .
 
-# Exponer el puerto del backend Flask
+# Ensure JSON config files in extractors are present (redundant if COPY . . is used, but explicit for clarity)
+COPY extractors/*.json extractors/
+
+# Expose backend port
 EXPOSE 5000
 
-# Comando por defecto
-#CMD ["python", "app.py"]
+# Default command
 CMD ["gunicorn", "-b", "0.0.0.0:5000", "app:app", "--workers=3", "--timeout=1800"]
 

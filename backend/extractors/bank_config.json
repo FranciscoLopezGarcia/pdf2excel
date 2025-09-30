@@ -1,0 +1,256 @@
+{
+  "SANTANDER": {
+    "detection_keywords": ["SANTANDER RIO", "BANCO SANTANDER", "SANTANDER"],
+    "layout": "separate_all",
+    "columns": {
+      "fecha": 0,
+      "descripcion": 1,
+      "referencia": 2,
+      "debito": 3,
+      "credito": 4,
+      "saldo": 5
+    },
+    "column_names": ["FECHA", "DETALLE", "REFERENCIA", "DEBITO", "CREDITO", "SALDO"],
+    "date_format": "%d/%m/%y",
+    "skip_keywords": ["SALDO ANTERIOR", "SALDO AL", "TOTAL", "PÁGINA"],
+    "saldo_keywords": ["SALDO ANTERIOR", "SALDO AL"]
+  },
+
+  "SAN_JUAN": {
+    "detection_keywords": ["BANCO SAN JUAN", "SAN JUAN"],
+    "layout": "separate_all",
+    "columns": {
+      "fecha": 0,
+      "descripcion": 1,
+      "referencia": 2,
+      "debito": 3,
+      "credito": 4,
+      "saldo": 5
+    },
+    "column_names": ["FECHA", "DETALLE", "REFERENCIA", "DEBITO", "CREDITO", "SALDO"],
+    "date_format": "%d/%m/%y",
+    "skip_keywords": ["SALDO ANTERIOR", "SALDO AL", "TOTAL", "PÁGINA"],
+    "saldo_keywords": ["SALDO ANTERIOR", "SALDO AL"]
+  },
+
+  "PROVINCIA": {
+    "detection_keywords": ["BANCO PROVINCIA", "BAPRO", "RESUMEN DE CUENTA", "CUENTA CORRIENTE"],
+    "layout": "separate_all",
+    "columns": {
+      "fecha": 0,
+      "descripcion": 1,
+      "referencia": 2,
+      "debito": 3,
+      "credito": 4,
+      "saldo": 5
+    },
+    "column_names": ["FECHA", "DESCRIPCION", "REFERENCIA", "DEBITO", "CREDITO", "SALDO"],
+    "date_format": "%d/%m/%y",
+    "skip_keywords": ["SALDO DEL PERIODO ANTERIOR", "SALDO PERIODO ACTUAL", "TOTAL", "PÁGINA"],
+    "saldo_keywords": ["SALDO DEL PERIODO ANTERIOR", "SALDO PERIODO ACTUAL"]
+  },
+
+  "PATAGONIA": {
+    "detection_keywords": ["BANCO PATAGONIA", "PATAGONIA"],
+    "layout": "separate_all",
+    "columns": {
+      "fecha": 0,
+      "descripcion": 1,
+      "referencia": 2,
+      "debito": 3,
+      "credito": 4,
+      "saldo": 5
+    },
+    "column_names": ["FECHA", "DETALLE", "REFERENCIA", "DEBITO", "CREDITO", "SALDO"],
+    "date_format": "%d/%m/%y",
+    "skip_keywords": ["SALDO ANTERIOR", "SALDO AL", "TOTAL", "PÁGINA"],
+    "saldo_keywords": ["SALDO ANTERIOR", "SALDO AL"]
+  },
+
+  "NACION": {
+    "detection_keywords": ["BANCO DE LA NACION", "NACION", "BNA"],
+    "layout": "separate_all",
+    "columns": {
+      "fecha": 0,
+      "descripcion": 1,
+      "referencia": 2,
+      "debito": 3,
+      "credito": 4,
+      "saldo": 5
+    },
+    "column_names": ["FECHA", "DETALLE", "REFERENCIA", "DEBITO", "CREDITO", "SALDO"],
+    "date_format": "%d/%m/%y",
+    "skip_keywords": ["SALDO ANTERIOR", "SALDO AL", "TOTAL", "PÁGINA"],
+    "saldo_keywords": ["SALDO ANTERIOR", "SALDO AL"]
+  },
+
+  "FRANCES": {
+    "detection_keywords": ["BANCO FRANCES", "BBVA FRANCES", "FRANCES"],
+    "layout": "separate_all",
+    "columns": {
+      "fecha": 0,
+      "descripcion": 1,
+      "referencia": 2,
+      "debito": 3,
+      "credito": 4,
+      "saldo": 5
+    },
+    "column_names": ["FECHA", "DETALLE", "REFERENCIA", "DEBITO", "CREDITO", "SALDO"],
+    "date_format": "%d/%m/%y",
+    "skip_keywords": ["SALDO ANTERIOR", "SALDO AL", "TOTAL", "PÁGINA"],
+    "saldo_keywords": ["SALDO ANTERIOR", "SALDO AL"]
+  },
+
+  "ICBC": {
+    "detection_keywords": ["ICBC", "INDUSTRIAL AND COMMERCIAL BANK OF CHINA"],
+    "layout": "separate_all",
+    "columns": {
+      "fecha": 0,
+      "descripcion": 1,
+      "referencia": 2,
+      "debito": 3,
+      "credito": 4,
+      "saldo": 5
+    },
+    "column_names": ["FECHA", "DETALLE", "REFERENCIA", "DEBITO", "CREDITO", "SALDO"],
+    "date_format": "%d/%m/%y",
+    "skip_keywords": ["SALDO ANTERIOR", "SALDO AL", "TOTAL", "PÁGINA"],
+    "saldo_keywords": ["SALDO ANTERIOR", "SALDO AL"]
+  },
+
+  "CIUDAD": {
+    "detection_keywords": ["BANCO CIUDAD", "CIUDAD"],
+    "layout": "separate_all",
+    "columns": {
+      "fecha": 0,
+      "descripcion": 1,
+      "referencia": 2,
+      "debito": 3,
+      "credito": 4,
+      "saldo": 5
+    },
+    "column_names": ["FECHA", "DETALLE", "REFERENCIA", "DEBITO", "CREDITO", "SALDO"],
+    "date_format": "%d/%m/%y",
+    "skip_keywords": ["SALDO ANTERIOR", "SALDO AL", "TOTAL", "PÁGINA"],
+    "saldo_keywords": ["SALDO ANTERIOR", "SALDO AL"]
+  },
+
+  "PROVINCIA_USD": {
+    "detection_keywords": ["BANCO PROVINCIA", "CUENTA CORRIENTE EN U$S", "BAPRO"],
+    "layout": "separate_all",
+    "columns": {
+      "fecha": 0,
+      "descripcion": 1,
+      "referencia": 2,
+      "debito": 3,
+      "credito": 4,
+      "saldo": 5
+    },
+    "column_names": ["FECHA", "DESCRIPCION", "REFERENCIA", "DEBITO", "CREDITO", "SALDO"],
+    "date_format": "%d/%m/%y",
+    "skip_keywords": ["SALDO DEL PERIODO ANTERIOR", "SALDO PERIODO ACTUAL", "TOTAL", "PÁGINA"],
+    "saldo_keywords": ["SALDO DEL PERIODO ANTERIOR", "SALDO PERIODO ACTUAL"]
+  },
+
+  "PROVINCIA_PESOS": {
+    "detection_keywords": ["BANCO PROVINCIA", "CUENTA CORRIENTE EN PESOS", "BAPRO"],
+    "layout": "separate_all",
+    "columns": {
+      "fecha": 0,
+      "descripcion": 1,
+      "referencia": 2,
+      "debito": 3,
+      "credito": 4,
+      "saldo": 5
+    },
+    "column_names": ["FECHA", "DESCRIPCION", "REFERENCIA", "DEBITO", "CREDITO", "SALDO"],
+    "date_format": "%d/%m/%y",
+    "skip_keywords": ["SALDO DEL PERIODO ANTERIOR", "SALDO PERIODO ACTUAL", "TOTAL", "PÁGINA"],
+    "saldo_keywords": ["SALDO DEL PERIODO ANTERIOR", "SALDO PERIODO ACTUAL"]
+  },
+  "GALICIA_USD": {
+    "detection_keywords": ["BANCO GALICIA", "CUENTA CORRIENTE ESPECIAL EN DOLARES", "RESUMEN DE CUENTA"],
+    "layout": "separate_all",
+    "columns": {
+      "fecha": 0,
+      "descripcion": 1,
+      "origen": 2,
+      "credito": 3,
+      "debito": 4,
+      "saldo": 5
+    },
+    "column_names": ["FECHA", "DESCRIPCION", "ORIGEN", "CREDITO", "DEBITO", "SALDO"],
+    "date_format": "%d/%m/%y",
+    "skip_keywords": ["SIN MOVIMIENTOS", "SALDOS", "PÁGINA"],
+    "saldo_keywords": ["SALDOS"]
+  },
+
+  "ITAU": {
+    "detection_keywords": ["BANCO ITAU", "ITAU"],
+    "layout": "separate_all",
+    "columns": {
+      "fecha": 0,
+      "descripcion": 1,
+      "referencia": 2,
+      "debito": 3,
+      "credito": 4,
+      "saldo": 5
+    },
+    "column_names": ["FECHA", "DETALLE", "REFERENCIA", "DEBITO", "CREDITO", "SALDO"],
+    "date_format": "%d/%m/%y",
+    "skip_keywords": ["SALDO ANTERIOR", "SALDO AL", "TOTAL", "PÁGINA"],
+    "saldo_keywords": ["SALDO ANTERIOR", "SALDO AL"]
+  },
+
+  "CREDICOOP_MAYO": {
+    "detection_keywords": ["CREDICOOP", "BANCO CREDICOOP"],
+    "layout": "separate_all",
+    "columns": {
+      "fecha": 0,
+      "comprobante": 1,
+      "descripcion": 2,
+      "debito": 3,
+      "credito": 4,
+      "saldo": 5
+    },
+    "column_names": ["FECHA", "COMBTE", "DESCRIPCION", "DEBITO", "CREDITO", "SALDO"],
+    "date_format": "%d/%m/%y",
+    "skip_keywords": ["SALDO AL", "SALDO ANTERIOR", "TOTAL", "PÁGINA"],
+    "saldo_keywords": ["SALDO AL", "SALDO ANTERIOR"]
+  },
+
+  "CREDICOOP_ABRIL": {
+    "detection_keywords": ["CREDICOOP", "BANCO CREDICOOP"],
+    "layout": "separate_all",
+    "columns": {
+      "fecha": 0,
+      "comprobante": 1,
+      "descripcion": 2,
+      "debito": 3,
+      "credito": 4,
+      "saldo": 5
+    },
+    "column_names": ["FECHA", "COMBTE", "DESCRIPCION", "DEBITO", "CREDITO", "SALDO"],
+    "date_format": "%d/%m/%y",
+    "skip_keywords": ["SALDO AL", "SALDO ANTERIOR", "TOTAL", "PÁGINA"],
+    "saldo_keywords": ["SALDO AL", "SALDO ANTERIOR"]
+  },
+
+  "CREDICOOP_CORRECT": {
+    "detection_keywords": ["CREDICOOP", "BANCO CREDICOOP"],
+    "layout": "separate_all",
+    "columns": {
+      "fecha": 0,
+      "comprobante": 1,
+      "descripcion": 2,
+      "debito": 3,
+      "credito": 4,
+      "saldo": 5
+    },
+    "column_names": ["FECHA", "COMBTE", "DESCRIPCION", "DEBITO", "CREDITO", "SALDO"],
+    "date_format": "%d/%m/%y",
+    "skip_keywords": ["SALDO AL", "SALDO ANTERIOR", "TOTAL", "PÁGINA"],
+    "saldo_keywords": ["SALDO AL", "SALDO ANTERIOR"]
+  }
+}
+
