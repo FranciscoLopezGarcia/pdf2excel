@@ -5,16 +5,17 @@ services:
     build:
       context: ./backend
     container_name: pdf2excel-backend
+    ports:
+      - "5000:5000"
     environment:
       - SECRET_KEY=${SECRET_KEY:-super_secret_key}
       - TESSERACT_PATH=${TESSERACT_PATH:-tesseract}
       - POPPLER_PATH=${POPPLER_PATH:-/usr/bin}
     volumes:
+      - ./backend:/app
       - ./input:/app/input
       - ./output:/app/output
     restart: unless-stopped
-    networks:
-      - pdf2excel-net
 
   nginx:
     build:
@@ -22,13 +23,10 @@ services:
       dockerfile: nginx/Dockerfile
     container_name: pdf2excel-nginx
     ports:
-      - "80:80"
+      - "8080:80"
     depends_on:
       - backend
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro
     restart: unless-stopped
-    networks:
-      - pdf2excel-net
-
-networks:
-  pdf2excel-net:
-    driver: bridge
