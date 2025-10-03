@@ -1,4 +1,3 @@
-
 """
 Bank-specific parser.
 Output columns (strict):
@@ -17,6 +16,7 @@ _AMT = r"[\-\(\)]?\d{1,3}(?:[\.\s]\d{3})*(?:,\d{2})?[\)]?"
 _AMT_STRICT = r"-?\d{1,3}(?:\.\d{3})*,\d{2}"
 _DATE = r"(?:\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?)"
 
+
 def _to_amount(s: str) -> float:
     if s is None:
         return 0.0
@@ -30,62 +30,38 @@ def _to_amount(s: str) -> float:
     if s.startswith('-'):
         neg = True
         s = s[1:]
-    # normalize: remove thousands, change comma to dot
     s = s.replace('.', '').replace(' ', '').replace('\u00a0', '')
     s = s.replace(',', '.')
     try:
         val = float(s)
     except Exception:
-        # last resort: find numeric
         m = re.search(r"\d+(?:\.\d{2})?$", s)
-        if m:
-            val = float(m.group(0))
-        else:
-            val = 0.0
+        val = float(m.group(0)) if m else 0.0
     return -val if neg else val
+
 
 def _norm_date(raw: str, year_hint: Optional[int] = None) -> str:
     if not raw:
         return ""
-    raw = raw.strip()
-    # common fixes
-    raw = raw.replace('.', '/').replace('-', '/')
+    raw = raw.strip().replace('.', '/').replace('-', '/')
     parts = raw.split('/')
-    # complete missing year
     if len(parts) == 2:
         d, m = parts
         y = year_hint or datetime.now().year
         try:
-            dt = datetime(int(y), int(m), int(d))
-            return dt.strftime("%d/%m/%Y")
+            return datetime(int(y), int(m), int(d)).strftime("%d/%m/%Y")
         except Exception:
             pass
-    # try many formats
-    for fmt in ("%d/%m/%Y", "%d/%m/%y", "%d-%m-%Y", "%d-%m-%y"):
+    for fmt in ("%d/%m/%Y", "%d/%m/%y"):
         try:
             return datetime.strptime(raw, fmt).strftime("%d/%m/%Y")
         except Exception:
             continue
-    # ultra fallback: dd/mm[/yy|yyyy] forgiving
-    m = re.match(r"(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?$", raw)
-    if m:
-        d, mo, y = m.groups()
-        if y is None:
-            y = year_hint or datetime.now().year
-        else:
-            y = int(y)
-            if y < 100:
-                y = 2000 + y
-        try:
-            dt = datetime(int(y), int(mo), int(d))
-            return dt.strftime("%d/%m/%Y")
-        except Exception:
-            return raw
     return raw
+
 
 def _emit_row(rows: List[Dict[str, Any]], fecha: str, detalle: str, ref: str,
               deb: float, cre: float, saldo: float):
-    # Compute mes/año from fecha if possible
     mes = año = ""
     try:
         d = datetime.strptime(fecha, "%d/%m/%Y")
@@ -104,11 +80,10 @@ def _emit_row(rows: List[Dict[str, Any]], fecha: str, detalle: str, ref: str,
         "saldo": round(float(saldo or 0.0), 2),
     })
 
-class ParserError(Exception):
-    pass
 
 BANK_NAME = "SUPERVIELLE"
 DETECTION_KEYWORDS = ["SUPERVIELLE", "CUENTA CORRIENTE EN U$S", "BANCO SUPERVIELLE"]
+
 
 class SupervielleParser(BaseBankParser):
     BANK = BANK_NAME
@@ -122,56 +97,62 @@ class SupervielleParser(BaseBankParser):
     def parse(self, pdf_path: str, text: str = ""):
         if not text:
             text = self.reader.extract_text(pdf_path)
+
         lines = [re.sub(r"\s+", " ", l).strip() for l in text.splitlines()]
         year_hint = self._infer_year(text)
         rows = []
         saldo_anterior = None
         saldo_final = None
 
-        # Find saldo lines (USD statements often show both)
+        # Detectar saldos
         for ln in lines:
-            if re.search(r"\bSALDO\s+(DEL\s+PER[IÍ]ODO\s+ANTERIOR|ULTIMO\s+EXTRACTO|ANTERIOR)\b", ln, re.I):
+            if re.search(r"SALDO\s+(DEL\s+PER[IÍ]ODO\s+ANTERIOR|ANTERIOR)", ln, re.I):
                 m = re.search(rf"({_AMT_STRICT})$", ln)
-                if m: saldo_anterior = _to_amount(m.group(1))
-            if re.search(r"\bSALDO\s+(PER[IÍ]ODO\s+ACTUAL|FINAL|AL)\b", ln, re.I):
+                if m:
+                    saldo_anterior = _to_amount(m.group(1))
+            if re.search(r"SALDO\s+(FINAL|ACTUAL|AL)", ln, re.I):
                 m = re.search(rf"({_AMT_STRICT})$", ln)
-                if m: saldo_final = _to_amount(m.group(1))
+                if m:
+                    saldo_final = _to_amount(m.group(1))
 
-        # Movement line: date + detail + (maybe ref & date valor) + debit/credit/saldo (last three numeric tokens)
+        # Transacciones
         patt = re.compile(
             rf"^(?P<fecha>{_DATE})\s+(?P<detalle>.+?)\s+(?P<deb>{_AMT})?\s+(?P<cred>{_AMT})?\s+(?P<saldo>{_AMT})$",
             re.I
         )
+
+        buffer = []
+        current = None
+
         for ln in lines:
             if re.search(r"FECHA\s+CONCEPTO.*SALDO", ln, re.I):
                 continue
-            m = patt.match(ln)
-            if not m:
-                # try to parse last 3 numeric tokens
-                toks = ln.split()
-                nums = [t for t in toks if re.fullmatch(_AMT_STRICT.replace('\\','\\'), t) or re.fullmatch(r"-?\d+(?:\.\d{3})*,\d{2}", t)]
-                if len(nums) >= 3:
-                    saldo = _to_amount(nums[-1]); cred = _to_amount(nums[-2]); deb = _to_amount(nums[-3])
-                    # rest is date + detail
-                    rest = ln[:ln.rfind(nums[-3])].strip()
-                    m2 = re.match(rf"^(?P<fecha>{_DATE})\s+(?P<detalle>.+)$", rest)
-                    if m2:
-                        fecha = _norm_date(m2.group('fecha'), year_hint)
-                        detalle = m2.group('detalle')
-                        _emit_row(rows, fecha, detalle, "", max(0,deb), max(0,cred), saldo)
-                continue
-            g = m.groupdict()
-            fecha = _norm_date(g.get("fecha",""), year_hint)
-            detalle = g.get("detalle","")
-            deb = _to_amount(g.get("deb") or "0")
-            cred = _to_amount(g.get("cred") or "0")
-            saldo = _to_amount(g.get("saldo") or "0")
-            if deb and deb < 0: deb = abs(deb)
-            if cred and cred < 0: cred = abs(cred)
-            _emit_row(rows, fecha, detalle, "", deb, cred, saldo)
 
+            m = patt.match(ln)
+            if m:
+                if current:
+                    current["detalle"] += " " + " ".join(buffer).strip()
+                    _emit_row(rows, current["fecha"], current["detalle"], "", current["deb"], current["cred"], current["saldo"])
+                    buffer = []
+                g = m.groupdict()
+                fecha = _norm_date(g.get("fecha", ""), year_hint)
+                detalle = g.get("detalle", "")
+                deb = _to_amount(g.get("deb") or "0")
+                cred = _to_amount(g.get("cred") or "0")
+                saldo = _to_amount(g.get("saldo") or "0")
+                current = {"fecha": fecha, "detalle": detalle, "deb": deb, "cred": cred, "saldo": saldo}
+            else:
+                if current:
+                    buffer.append(ln)
+
+        if current:
+            current["detalle"] += " " + " ".join(buffer).strip()
+            _emit_row(rows, current["fecha"], current["detalle"], "", current["deb"], current["cred"], current["saldo"])
+
+        # Saldos al inicio y fin
         if saldo_anterior is not None:
             _emit_row(rows, "", "SALDO ANTERIOR", "", 0, 0, saldo_anterior)
         if saldo_final is not None:
             _emit_row(rows, "", "SALDO FINAL", "", 0, 0, saldo_final)
+
         return self._finalize_dataframe(rows)

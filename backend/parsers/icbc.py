@@ -1,17 +1,19 @@
-
 """
-Bank-specific parser.
+Banco ICBC - Parser específico
 Output columns (strict):
   fecha | mes | año | detalle | referencia | debito | credito | saldo
-Notes:
-  - Always emits "SALDO ANTERIOR" (first) and "SALDO FINAL" (last) rows if found.
-  - Dates accepted: dd/mm[/yy|yyyy], dd-mm-yy, dd-mm-yyyy
-  - Amounts: handles dot thousands + comma decimals; also "-" prefix or "( )" as negatives.
+Notas:
+  - Captura SALDO ANTERIOR y SALDO FINAL si están presentes
+  - Maneja multilínea en detalle
+  - Regex adaptada al formato de ICBC (fecha + concepto + opcionales + débitos + créditos + saldo)
 """
 from parsers.base import BaseBankParser
 import re
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 _AMT = r"[\-\(\)]?\d{1,3}(?:[\.\s]\d{3})*(?:,\d{2})?[\)]?"
 _AMT_STRICT = r"-?\d{1,3}(?:\.\d{3})*,\d{2}"
@@ -21,56 +23,51 @@ def _to_amount(s: str) -> float:
     if s is None:
         return 0.0
     s = s.strip()
-    if not s:
+    if not s or s in ["", "-", "nan"]:
         return 0.0
     neg = False
-    if s.startswith('(') and s.endswith(')'):
+    if s.startswith("(") and s.endswith(")"):
         neg = True
         s = s[1:-1]
-    if s.startswith('-'):
+    if s.startswith("-") or s.endswith("-"):
         neg = True
-        s = s[1:]
+        s = s.replace("-", "")
     # normalize: remove thousands, change comma to dot
-    s = s.replace('.', '').replace(' ', '').replace('\u00a0', '')
-    s = s.replace(',', '.')
+    s = s.replace(".", "").replace(" ", "").replace("\u00a0", "")
+    s = s.replace(",", ".")
     try:
         val = float(s)
     except Exception:
-        # last resort: find numeric
         m = re.search(r"\d+(?:\.\d{2})?$", s)
         if m:
             val = float(m.group(0))
         else:
+            logger.warning(f"[ICBC] No se pudo parsear monto: {s}")
             val = 0.0
     return -val if neg else val
 
 def _norm_date(raw: str, year_hint: Optional[int] = None) -> str:
     if not raw:
         return ""
-    raw = raw.strip()
-    # common fixes
-    raw = raw.replace('.', '/').replace('-', '/')
-    parts = raw.split('/')
-    # complete missing year
-    if len(parts) == 2:
+    raw = raw.strip().replace(".", "/").replace("-", "/")
+    parts = raw.split("/")
+    if len(parts) == 2:  # dd/mm sin año
         d, m = parts
         y = year_hint or datetime.now().year
         try:
             dt = datetime(int(y), int(m), int(d))
             return dt.strftime("%d/%m/%Y")
         except Exception:
-            pass
-    # try many formats
-    for fmt in ("%d/%m/%Y", "%d/%m/%y", "%d-%m-%Y", "%d-%m-%y"):
+            return raw
+    for fmt in ("%d/%m/%Y", "%d/%m/%y"):
         try:
             return datetime.strptime(raw, fmt).strftime("%d/%m/%Y")
         except Exception:
             continue
-    # ultra fallback: dd/mm[/yy|yyyy] forgiving
     m = re.match(r"(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?$", raw)
     if m:
         d, mo, y = m.groups()
-        if y is None:
+        if not y:
             y = year_hint or datetime.now().year
         else:
             y = int(y)
@@ -85,12 +82,12 @@ def _norm_date(raw: str, year_hint: Optional[int] = None) -> str:
 
 def _emit_row(rows: List[Dict[str, Any]], fecha: str, detalle: str, ref: str,
               deb: float, cre: float, saldo: float):
-    # Compute mes/año from fecha if possible
     mes = año = ""
     try:
-        d = datetime.strptime(fecha, "%d/%m/%Y")
-        mes = f"{d.month:02d}"
-        año = str(d.year)
+        if fecha:
+            d = datetime.strptime(fecha, "%d/%m/%Y")
+            mes = f"{d.month:02d}"
+            año = str(d.year)
     except Exception:
         pass
     rows.append({
@@ -104,15 +101,9 @@ def _emit_row(rows: List[Dict[str, Any]], fecha: str, detalle: str, ref: str,
         "saldo": round(float(saldo or 0.0), 2),
     })
 
-class ParserError(Exception):
-    pass
-
-BANK_NAME = "ICBC"
-DETECTION_KEYWORDS = ["ICBC", "INDUSTRIAL AND COMMERCIAL BANK OF CHINA (ARGENTINA)"]
-
 class ICBCParser(BaseBankParser):
-    BANK = BANK_NAME
-    KEYWORDS = DETECTION_KEYWORDS
+    BANK = "ICBC"
+    KEYWORDS = ["ICBC", "INDUSTRIAL AND COMMERCIAL BANK OF CHINA (ARGENTINA)"]
 
     def detect(self, text: str, filename: str = "") -> bool:
         t = (text or "").upper()
@@ -128,22 +119,25 @@ class ICBCParser(BaseBankParser):
         saldo_anterior = None
         saldo_final = None
 
+        # Captura saldos inicial y final
         for ln in lines:
-            if re.search(r"SALDO\s+ULTIMO\s+EXTRACTO|SALDO\s+ANTERIOR", ln, re.I):
+            if re.search(r"SALDO\s+(ULTIMO\s+EXTRACTO|ANTERIOR)", ln, re.I):
                 m = re.search(rf"({_AMT_STRICT})$", ln)
                 if m:
                     saldo_anterior = _to_amount(m.group(1))
-            if re.search(r"\bSALDO\s+FINAL\b|SALDO\s+AL\b", ln, re.I):
+            if re.search(r"\bSALDO\s+(FINAL|AL)\b", ln, re.I):
                 m = re.search(rf"({_AMT_STRICT})$", ln)
                 if m:
                     saldo_final = _to_amount(m.group(1))
 
+        # Patrón principal para movimientos
         patt = re.compile(
             rf"^(?P<fecha>{_DATE})\s+(?P<detalle>.+?)\s+(?:{_DATE})?\s*(?:\S+)?\s*(?:\S+)?\s+(?P<deb>{_AMT})?\s+(?P<cred>{_AMT})?\s+(?P<saldo>{_AMT})$",
             re.I
         )
+
         for ln in lines:
-            if re.search(r"FECHA\s+CONCEPTO.*CREDITOS?\s+SALD", ln, re.I):
+            if re.search(r"FECHA\s+CONCEPTO.*CREDITOS?.*SALDO", ln, re.I):
                 continue
             m = patt.match(ln)
             if not m:
@@ -162,4 +156,5 @@ class ICBCParser(BaseBankParser):
             _emit_row(rows, "", "SALDO ANTERIOR", "", 0, 0, saldo_anterior)
         if saldo_final is not None:
             _emit_row(rows, "", "SALDO FINAL", "", 0, 0, saldo_final)
+
         return self._finalize_dataframe(rows)
