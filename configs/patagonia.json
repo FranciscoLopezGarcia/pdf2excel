@@ -1,0 +1,43 @@
+{
+  "name": "patagonia",
+  "field_mappings": {
+    "fecha": ["fecha"],
+    "detalle": ["concepto","detalle","descripcion"],
+    "referencia": ["refer.","referencia"],
+    "debitos": ["debitos","debito","débito","debe"],
+    "creditos": ["creditos","credito","crédito","haber"],
+    "saldo": ["saldo"]
+  },
+  "keywords": ["BANCO PATAGONIA","PATAGONIA","ESTADO DE CUENTAS UNIFICADO"],
+  "date_patterns": ["\\d{1,2}/\\d{1,2}/\\d{2,4}"],
+  "amount_patterns": ["\\d{1,3}(?:\\.\\d{3})*,\\d{2}-?","\\d+,\\d{2}-?"],
+  "exclude_keywords": ["estimado cliente","situacion impositiva","responsable inscripto","ingresos brutos","cbu:","pagina:","p£gina:"],
+  "table_required_keywords": ["fecha","concepto","debitos","creditos","saldo"],
+  "table_detection": {
+    "header_row_indicators": ["fecha","concepto","refer.","debitos","creditos","saldo"],
+    "data_section_start": "CUENTA.*PESOS",
+    "data_section_end": "SALDO ACTUAL",
+    "skip_lines_containing": ["SALDO ANTERIOR","SALDO ACTUAL"]
+  },
+  "preferred_column_order": ["fecha","detalle","referencia","debitos","creditos","saldo"],
+  "amount_logic": {
+    "mode": "mixed",
+    "debit_columns": ["debitos"],
+    "credit_columns": ["creditos"],
+    "handle_negative_suffix": true,
+    "empty_means_zero": true
+  },
+  "validation_rules": {
+    "min_columns": 5,
+    "required_fields": ["fecha","detalle"],
+    "skip_empty_rows": true,
+    "skip_header_rows": true,
+    "skip_summary_rows": true,
+    "amount_validation": {
+      "allow_empty": true,
+      "decimal_places": 2,
+      "thousand_separator": ".",
+      "decimal_separator": ","
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "sanjuan",
+  "field_mappings": {
+    "fecha": ["fecha","date"],
+    "detalle": ["concepto","detalle","descripcion"],
+    "debitos": ["debito","debitos","débito"],
+    "creditos": ["credito","creditos","crédito"],
+    "saldo": ["saldo","balance"]
+  },
+  "keywords": ["BANCO SAN JUAN","SAN JUAN","HOME BANKING","RESUMEN MENSUAL"],
+  "date_patterns": ["\\d{1,2}/\\d{1,2}/\\d{2,4}"],
+  "amount_patterns": ["\\d{1,3}(?:\\.\\d{3})*,\\d{2}","\\d+,\\d{2}","(?<!\\d),\\d{2}"],
+  "exclude_keywords": ["home banking","probalo","terminales de autoservicio","contact center","detalle de las cuentas","detalle de titulares de cuentas","movimientos pendientes","detalle de impuestos","cbu","cuit","producto","periodo del"],
+  "table_required_keywords": ["fecha","concepto","debito","credito","saldo"],
+  "table_detection": {
+    "header_row_indicators": ["fecha","concepto","debito","credito","saldo"],
+    "data_section_start": "MOVIMIENTOS DE CUENTA CORRIENTE:",
+    "skip_lines_containing": ["SALDO DEL PERIODO ANTERIOR"],
+    "min_columns": 5
+  },
+  "preferred_column_order": ["fecha","detalle","referencia","debitos","creditos","saldo"],
+  "amount_logic": {
+    "mode": "columns",
+    "debit_columns": ["debito"],
+    "credit_columns": ["credito"],
+    "empty_means_zero": true,
+    "handle_decimal_only": true
+  },
+  "validation_rules": {
+    "min_columns": 4,
+    "required_fields": ["fecha","detalle"],
+    "skip_empty_rows": true,
+    "amount_validation": {
+      "allow_empty": true,
+      "decimal_places": 2,
+      "thousand_separator": ".",
+      "decimal_separator": ",",
+      "handle_partial_amounts": true
+    }
+  }
+}

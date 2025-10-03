@@ -1,188 +1,111 @@
-
-"""
-Bank-specific parser.
-Output columns (strict):
-  fecha | mes | año | detalle | referencia | debito | credito | saldo
-Notes:
-  - Always emits "SALDO ANTERIOR" (first) and "SALDO FINAL" (last) rows if found.
-  - Dates accepted: dd/mm[/yy|yyyy], dd-mm-yy, dd-mm-yyyy
-  - Amounts: handles dot thousands + comma decimals; also "-" prefix or "( )" as negatives.
-"""
-from parsers.base import BaseBankParser
+import pandas as pd
 import re
+import logging
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from .base_parser import BaseParser
+from utils.date_utils import normalize_date, extract_year_month
 
-_AMT = r"[\-\(\)]?\d{1,3}(?:[\.\s]\d{3})*(?:,\d{2})?[\)]?"
-_AMT_STRICT = r"-?\d{1,3}(?:\.\d{3})*,\d{2}"
-_DATE = r"(?:\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?)"
+logger = logging.getLogger(__name__)
 
-def _to_amount(s: str) -> float:
-    if s is None:
-        return 0.0
-    s = s.strip()
-    if not s:
-        return 0.0
-    neg = False
-    if s.startswith('(') and s.endswith(')'):
-        neg = True
-        s = s[1:-1]
-    if s.startswith('-'):
-        neg = True
-        s = s[1:]
-    # normalize: remove thousands, change comma to dot
-    s = s.replace('.', '').replace(' ', '').replace('\u00a0', '')
-    s = s.replace(',', '.')
-    try:
-        val = float(s)
-    except Exception:
-        # last resort: find numeric
-        m = re.search(r"\d+(?:\.\d{2})?$", s)
-        if m:
-            val = float(m.group(0))
-        else:
-            val = 0.0
-    return -val if neg else val
+class PatagoniaParser(BaseParser):
+    BANK_NAME = "PATAGONIA"
+    DETECTION_KEYWORDS = ["BANCO PATAGONIA", "PATAGONIA", "ESTADO DE CUENTAS UNIFICADO"]
 
-def _norm_date(raw: str, year_hint: Optional[int] = None) -> str:
-    if not raw:
-        return ""
-    raw = raw.strip()
-    # common fixes
-    raw = raw.replace('.', '/').replace('-', '/')
-    parts = raw.split('/')
-    # complete missing year
-    if len(parts) == 2:
-        d, m = parts
-        y = year_hint or datetime.now().year
-        try:
-            dt = datetime(int(y), int(m), int(d))
-            return dt.strftime("%d/%m/%Y")
-        except Exception:
-            pass
-    # try many formats
-    for fmt in ("%d/%m/%Y", "%d/%m/%y", "%d-%m-%Y", "%d-%m-%y"):
-        try:
-            return datetime.strptime(raw, fmt).strftime("%d/%m/%Y")
-        except Exception:
-            continue
-    # ultra fallback: dd/mm[/yy|yyyy] forgiving
-    m = re.match(r"(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?$", raw)
-    if m:
-        d, mo, y = m.groups()
-        if y is None:
-            y = year_hint or datetime.now().year
-        else:
-            y = int(y)
-            if y < 100:
-                y = 2000 + y
-        try:
-            dt = datetime(int(y), int(mo), int(d))
-            return dt.strftime("%d/%m/%Y")
-        except Exception:
-            return raw
-    return raw
+    DATE_REGEX = r"\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?"
+    AMOUNT_REGEX = r"\d{1,3}(?:\.\d{3})*,\d{2}-?|\d+,\d{2}-?"
 
-def _emit_row(rows: List[Dict[str, Any]], fecha: str, detalle: str, ref: str,
-              deb: float, cre: float, saldo: float):
-    # Compute mes/año from fecha if possible
-    mes = año = ""
-    try:
-        d = datetime.strptime(fecha, "%d/%m/%Y")
-        mes = f"{d.month:02d}"
-        año = str(d.year)
-    except Exception:
-        pass
-    rows.append({
-        "fecha": fecha or "",
-        "mes": mes,
-        "año": año,
-        "detalle": (detalle or "").strip(),
-        "referencia": (ref or "").strip(),
-        "debito": round(float(deb or 0.0), 2),
-        "credito": round(float(cre or 0.0), 2),
-        "saldo": round(float(saldo or 0.0), 2),
-    })
-
-class ParserError(Exception):
-    pass
-
-BANK_NAME = "PATAGONIA"
-DETECTION_KEYWORDS = ["BANCO PATAGONIA", "PATAGONIA EBANK", "ESTADO DE CUENTAS UNIFICADO"]
-
-class PatagoniaParser(BaseBankParser):
-    BANK = BANK_NAME
-    KEYWORDS = DETECTION_KEYWORDS
+    EXCLUDE_KEYWORDS = [
+        "estimado cliente","situacion impositiva","responsable inscripto","ingresos brutos",
+        "cbu:","pagina:","p£gina:"
+    ]
 
     def detect(self, text: str, filename: str = "") -> bool:
         t = (text or "").upper()
         f = (filename or "").upper()
-        return any(k in t or k in f for k in self.KEYWORDS)
+        return any(k in t or k in f for k in self.DETECTION_KEYWORDS)
 
-    def parse(self, pdf_path: str, text: str = ""):
-        if not text:
-            text = self.reader.extract_text(pdf_path)
-        lines = [re.sub(r"\s+", " ", l).strip() for l in text.splitlines()]
-        year_hint = self._infer_year(text)
+    def parse(self, raw_data, filename=""):
+        logger.info(f"Procesando {self.BANK_NAME} - {filename}")
         rows = []
-        saldo_anterior = None
-        saldo_final = None
 
-        # Find "SALDO ANTERIOR"
-        for ln in lines:
-            if re.search(r"\bSALDO\s+ANTERIOR\b", ln, re.I):
-                # maybe it ends with amount
-                m = re.search(rf"({_AMT_STRICT})$", ln)
-                if m:
-                    saldo_anterior = _to_amount(m.group(1))
-                break
+        if isinstance(raw_data, str):
+            return self._parse_text_lines(raw_data.splitlines())
+        elif isinstance(raw_data, list) and len(raw_data) > 0 and all(isinstance(x, str) for x in raw_data):
+            return self._parse_text_lines(raw_data)
+        return pd.DataFrame(columns=self.REQUIRED_COLUMNS)
 
-        # Patterns for movement lines: date + concept + (opt ref) + deb + cred + saldo
-        patt1 = re.compile(
-            rf"^(?P<fecha>{_DATE})\s+(?P<detalle>.+?)\s+(?P<deb>{_AMT})?\s+(?P<cred>{_AMT})?\s+(?P<saldo>{_AMT})$",
-            re.I
-        )
-        patt2 = re.compile(  # with optional reference token in the middle
-            rf"^(?P<fecha>{_DATE})\s+(?P<detalle>.+?)\s+(?P<ref>[A-Z0-9\-]+)?\s+(?P<deb>{_AMT})?\s+(?P<cred>{_AMT})?\s+(?P<saldo>{_AMT})$",
-            re.I
+    def _parse_text_lines(self, lines):
+        rows = []
+        patt = re.compile(
+            rf"(?P<fecha>{self.DATE_REGEX})\s+(?P<detalle>.+?)\s+(?P<deb>{self.AMOUNT_REGEX})?\s+(?P<cred>{self.AMOUNT_REGEX})?\s+(?P<saldo>{self.AMOUNT_REGEX})$",
+            re.I,
         )
 
-        for ln in lines:
-            # skip headers
-            if re.search(r"FECHA\s+CONCEPTO.*SALDO", ln, re.I):
-                continue
-            m = patt1.match(ln) or patt2.match(ln)
-            if not m:
-                continue
-            g = m.groupdict()
-            fecha = _norm_date(g.get("fecha",""), year_hint)
-            detalle = g.get("detalle","")
-            ref = g.get("ref") or ""
-            deb = _to_amount(g.get("deb") or "0")
-            cred = _to_amount(g.get("cred") or "0")
-            saldo = _to_amount(g.get("saldo") or "0")
-            # normalize columns: if one of debit/credit has sign, split accordingly
-            if deb and deb > 0 and cred and cred > 0:
-                # keep as is
-                pass
-            elif deb and deb < 0:
-                deb = abs(deb)
-            elif cred and cred < 0:
-                cred = abs(cred)
-            _emit_row(rows, fecha, detalle, ref, deb, cred, saldo)
+        saldo_anterior, saldo_final = None, None
 
-        # saldo final
-        for ln in reversed(lines):
-            if re.search(r"\bSALDO\s+(ACTUAL|FINAL)\b", ln, re.I):
-                m = re.search(rf"({_AMT_STRICT})$", ln)
+        for line in lines:
+            clean = re.sub(r"\s+", " ", line).strip()
+            if not clean or self._is_skip_line(clean):
+                continue
+
+            if "SALDO ANTERIOR" in clean.upper():
+                m = re.search(rf"({self.AMOUNT_REGEX})$", clean)
                 if m:
-                    saldo_final = _to_amount(m.group(1))
-                break
+                    saldo_anterior = self._parse_amount(m.group(1))
+                continue
+            if "SALDO ACTUAL" in clean.upper() or "SALDO FINAL" in clean.upper():
+                m = re.search(rf"({self.AMOUNT_REGEX})$", clean)
+                if m:
+                    saldo_final = self._parse_amount(m.group(1))
+                continue
 
-        # Prepend/append saldo rows
+            m = patt.match(clean)
+            if m:
+                g = m.groupdict()
+                fecha = normalize_date(g.get("fecha", ""))
+                año, mes = extract_year_month(fecha)
+                detalle = g.get("detalle", "")
+                deb = self._parse_amount(g.get("deb"))
+                cred = self._parse_amount(g.get("cred"))
+                saldo = self._parse_amount(g.get("saldo"))
+                rows.append({
+                    "fecha": fecha,
+                    "mes": mes,
+                    "año": año,
+                    "detalle": detalle,
+                    "referencia": "",
+                    "debito": deb,
+                    "credito": cred,
+                    "saldo": saldo,
+                })
+
+        # inyectar saldo anterior/final
         if saldo_anterior is not None:
-            _emit_row(rows, "", "SALDO ANTERIOR", "", 0, 0, saldo_anterior)
+            rows.insert(0, {
+                "fecha": "", "mes": "", "año": "",
+                "detalle": "SALDO ANTERIOR", "referencia": "",
+                "debito": 0.0, "credito": 0.0, "saldo": saldo_anterior
+            })
         if saldo_final is not None:
-            _emit_row(rows, "", "SALDO FINAL", "", 0, 0, saldo_final)
+            rows.append({
+                "fecha": "", "mes": "", "año": "",
+                "detalle": "SALDO FINAL", "referencia": "",
+                "debito": 0.0, "credito": 0.0, "saldo": saldo_final
+            })
 
-        return self._finalize_dataframe(rows)
+        return self.finalize(pd.DataFrame(rows))
+
+    def _parse_amount(self, s: str) -> float:
+        if not s or s.strip() in ["", "-"]:
+            return 0.0
+        t = str(s).replace("$", "").replace(" ", "").replace(".", "").replace(",", ".")
+        neg = t.startswith("-") or t.endswith("-") or ("(" in t and ")" in t)
+        t = t.replace("-", "").replace("(", "").replace(")", "")
+        try:
+            v = float(t)
+            return -v if neg else v
+        except Exception:
+            return 0.0
+
+    def _is_skip_line(self, line):
+        return any(kw in line.lower() for kw in self.EXCLUDE_KEYWORDS)

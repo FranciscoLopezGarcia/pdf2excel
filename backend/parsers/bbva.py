@@ -1,201 +1,133 @@
+# -*- coding: utf-8 -*-
 import re
-import streamlit as st
-from typing import List, Dict
+import logging
+import pandas as pd
 from datetime import datetime
 
-def convert_to_canonical_format(data: Dict) -> Dict:
-    canonical_rows = []
-
-    for row in data:
-        canonical_row = {
-            "FECHA": row["FECHA"],
-            "DETALLE": row["CONCEPTO"],
-            "REFERENCIA": row["ORIGEN"],
-            "DEBITOS": float(row["DÉBITO"].lstrip('-').replace('.', '').replace(',', '.')) if row["DÉBITO"] else '',
-            "CREDITOS": float(row["CRÉDITO"].replace('.', '').replace(',', '.')) if row["CRÉDITO"] else '',
-            "SALDO": float(row["SALDO"].replace('.', '').replace(',', '.')) if row["SALDO"] else ''
-        }
-
-        canonical_rows.append(canonical_row)
-
-    return canonical_rows
+logger = logging.getLogger(__name__)
 
 class BBVAParser:
-    # Define date_regex as a class variable
-    date_regex = re.compile(r'^(\d{2}/\d{2})(/\d{4})?$')
+    """
+    Parser específico para Banco BBVA.
+    Detecta movimientos con formato dd/mm o dd/mm/yyyy
+    Montos en formato argentino (1.234,56) con signos opcionales.
+    """
 
-    def parse(self, data: List[str]) -> List[List[Dict[str, str]]]:
-        # Combine all data into a single string
-        raw_text = "\n".join(data)
+    BANK_NAME = "BBVA"
 
-        # Extract year
-        year_matches = re.findall(r'Información al: \d{2}/\d{2}/(\d{4})', raw_text)
-        if year_matches:
-            year = max(int(y) for y in year_matches)
+    DATE_PATTERN = re.compile(r"(\d{1,2}[/-]\d{1,2})(?:[/-](\d{2,4}))?")
+    AMOUNT_PATTERN = re.compile(r"-?\$?\s*\d{1,3}(?:\.\d{3})*,\d{2}")
+
+    EXCLUDE_KEYWORDS = [
+        "movimientos en cuentas", "total movimientos", "saldo del período",
+        "saldo al", "página", "fecha", "concepto", "débito", "crédito"
+    ]
+
+    def detect(self, text: str, filename: str = "") -> bool:
+        return "BBVA" in (text.upper() + filename.upper())
+
+    def parse(self, raw_data, filename="") -> pd.DataFrame:
+        logger.info(f"Procesando extracto {self.BANK_NAME}: {filename}")
+
+        if isinstance(raw_data, str):
+            lines = raw_data.splitlines()
+        elif isinstance(raw_data, list):
+            lines = raw_data
         else:
-            year = datetime.now().year
+            return pd.DataFrame(columns=self.required_columns())
 
-        # Find the initial "Movimientos en cuentas" section
-        movimientos_start = re.search(r'Movimientos en cuentas', raw_text, re.IGNORECASE)
-        if not movimientos_start:
-            return []
+        rows = []
+        year_hint = self._infer_year(raw_data, filename)
 
-        # Start processing from after "Movimientos en cuentas"
-        current_pos = movimientos_start.end()
-        all_transactions = []
-
-        while True:
-            # Find next "SALDO ANTERIOR" section
-            saldo_anterior_start = re.search(r'SALDO ANTERIOR', raw_text[current_pos:], re.IGNORECASE)
-            if not saldo_anterior_start:
-                break
-
-            # Update current position to start of this section
-            current_pos += saldo_anterior_start.start()
-
-            # Find next "TOTAL MOVIMIENTOS"
-            movimientos_end = re.search(r'TOTAL MOVIMIENTOS', raw_text[current_pos:], re.IGNORECASE)
-            if not movimientos_end:
-                break
-
-            # Extract the account section
-            account_text = raw_text[current_pos:current_pos + movimientos_end.end()]
-
-            # Update position for next iteration
-            current_pos += movimientos_end.end()
-
-            # Process this section
-            transactions = self.process_account_section(account_text, year)
-
-            # After processing this section, add it to all_transactions
-            if transactions:
-                all_transactions.append(convert_to_canonical_format(transactions))
-
-        return all_transactions
-
-    def process_account_section(self, account_text: str, year: int) -> List[Dict[str, str]]:
-        lines = [line.strip() for line in account_text.split('\n') if line.strip()]
-
-        # Initialize variables for this section
-        transactions = []
-        current_transaction = {}
+        current_tx = None
         buffer_concept = []
-        i = 0  # Initialize counter
-        total_lines = len(lines)  # Get total number of lines
 
-        # Handle "SALDO ANTERIOR"
-        while i < total_lines:
-            if lines[i].lower() == "saldo anterior":
-                if i + 1 < total_lines and re.match(r'^\d{1,3}(?:\.\d{3})*,\d{2}$', lines[i + 1]):
-                    transactions.append({
-                        "FECHA": "",
-                        "ORIGEN": "",
-                        "CONCEPTO": "SALDO ANTERIOR",
-                        "DÉBITO": "",
-                        "CRÉDITO": "",
-                        "SALDO": lines[i + 1]
-                    })
-                    i += 2  # Skip SALDO ANTERIOR line and the saldo value line
-                else:
-                    i += 1
-                break
-            i += 1
-
-        # Parse all transactions
-        while i < total_lines:
-            line = lines[i]
-            # Now we can use self.date_regex
-            date_match = self.date_regex.match(line)
-            if date_match:
-                # If there's an existing transaction being built, save it
-                if current_transaction:
-                    # Finalize the previous transaction
-                    if buffer_concept:
-                        current_transaction['CONCEPTO'] = ' '.join(buffer_concept).strip()
-                        buffer_concept = []
-                    transactions.append(current_transaction)
-                    current_transaction = {}
-
-                # Start a new transaction
-                fecha = date_match.group(1)
-                if date_match.group(2):
-                    # If year is present in the date
-                    fecha_full = f"{fecha}/{date_match.group(2)[1:]}"  # Remove the slash before year
-                else:
-                    # Append the extracted year
-                    fecha_full = f"{fecha}/{year}"
-
-                current_transaction['FECHA'] = fecha_full
-                current_transaction['ORIGEN'] = ""
-                current_transaction['CONCEPTO'] = ""
-                current_transaction['DÉBITO'] = ""
-                current_transaction['CRÉDITO'] = ""
-                current_transaction['SALDO'] = ""
-
-                i += 1
-                # Check if next line is ORIGEN or part of CONCEPTO
-                if i < total_lines:
-                    next_line = lines[i]
-                    # ORIGEN is typically a single letter or starts with a letter followed by numbers
-                    origen_match = re.match(r'^([A-Z]{1,2}\s?\d*)$', next_line)
-                    if origen_match:
-                        current_transaction['ORIGEN'] = origen_match.group(1).strip()
-                        i += 1
-                # Collect CONCEPTO lines until we find DÉBITO/CRÉDITO
-                while i < total_lines:
-                    concept_line = lines[i]
-                    # Check if the line is a currency amount
-                    currency_match = re.match(r'^-?\d{1,3}(?:\.\d{3})*,\d{2}$', concept_line)
-                    if currency_match:
-                        # This line is either DÉBITO or CRÉDITO
-                        amount = concept_line
-                        if amount.startswith('-'):
-                            current_transaction['DÉBITO'] = amount
-                        else:
-                            current_transaction['CRÉDITO'] = amount
-                        i += 1
-                        # The next line should be SALDO
-                        if i < total_lines:
-                            saldo_line = lines[i]
-                            saldo_match = re.match(r'^-?\d{1,3}(?:\.\d{3})*,\d{2}$', saldo_line)
-                            if saldo_match:
-                                current_transaction['SALDO'] = saldo_line
-                                i += 1
-                        break
-                    else:
-                        # This line is part of CONCEPTO
-                        buffer_concept.append(concept_line)
-                        i += 1
+        for line in lines:
+            clean = line.strip()
+            if not clean:
                 continue
-            else:
-                # Non-date line outside of transaction, skip
-                i += 1
+            if any(kw in clean.lower() for kw in self.EXCLUDE_KEYWORDS):
+                continue
 
-        # After loop ends, append the last transaction if exists
-        if current_transaction:
+            date_match = self.DATE_PATTERN.match(clean)
+            if date_match:
+                if current_tx:
+                    if buffer_concept:
+                        current_tx["detalle"] = " ".join(buffer_concept).strip()
+                        buffer_concept = []
+                    rows.append(current_tx)
+                    current_tx = None
+
+                day_month, year = date_match.group(1), date_match.group(2)
+                if year:
+                    if len(year) == 2:
+                        year = 2000 + int(year)
+                    else:
+                        year = int(year)
+                else:
+                    year = year_hint or datetime.now().year
+
+                try:
+                    fecha = datetime.strptime(f"{day_month}/{year}", "%d/%m/%Y").strftime("%d/%m/%Y")
+                except Exception:
+                    fecha = f"{day_month}/{year}"
+
+                current_tx = {
+                    "fecha": fecha,
+                    "mes": str(datetime.strptime(fecha, "%d/%m/%Y").month).zfill(2) if "/" in fecha else "",
+                    "año": str(datetime.strptime(fecha, "%d/%m/%Y").year) if "/" in fecha else "",
+                    "detalle": "",
+                    "referencia": "",
+                    "debito": 0.0,
+                    "credito": 0.0,
+                    "saldo": 0.0,
+                }
+                continue
+
+            if self.AMOUNT_PATTERN.match(clean):
+                if current_tx:
+                    amount = self._parse_amount(clean)
+                    if current_tx["debito"] == 0.0 and clean.startswith("-"):
+                        current_tx["debito"] = abs(amount)
+                    elif current_tx["credito"] == 0.0 and not clean.startswith("-"):
+                        current_tx["credito"] = amount
+                    else:
+                        current_tx["saldo"] = amount
+                continue
+
+            if current_tx:
+                buffer_concept.append(clean)
+
+        if current_tx:
             if buffer_concept:
-                current_transaction['CONCEPTO'] = ' '.join(buffer_concept).strip()
-            transactions.append(current_transaction)
+                current_tx["detalle"] = " ".join(buffer_concept).strip()
+            rows.append(current_tx)
 
-        # Clean transactions: remove any incomplete transactions
-        cleaned_transactions = []
-        for tx in transactions:
-            if tx['CONCEPTO'] and (tx['SALDO'] or tx['DÉBITO'] or tx['CRÉDITO']):
-                cleaned_transactions.append(tx)
+        df = pd.DataFrame(rows, columns=self.required_columns())
+        return df
 
-        # Add "SALDO AL ..." as the last transaction
-        saldo_al_match = re.search(r'SALDO AL .* DE .*', account_text, re.IGNORECASE)
-        if saldo_al_match:
-            saldo_al_index = saldo_al_match.end()
-            saldo_al_lines = [line.strip() for line in account_text[saldo_al_index:].split('\n') if line.strip()]
-            if saldo_al_lines:
-                cleaned_transactions.append({
-                    "FECHA": "",
-                    "ORIGEN": "",
-                    "CONCEPTO": saldo_al_match.group(0),
-                    "DÉBITO": "",
-                    "CRÉDITO": "",
-                    "SALDO": saldo_al_lines[0]
-                })
+    def _parse_amount(self, s: str) -> float:
+        if not s or s.strip() in ["", "-"]:
+            return 0.0
+        t = s.replace("$", "").replace(" ", "").strip()
+        neg = t.startswith("-") or t.endswith("-")
+        t = t.replace("-", "").replace(".", "").replace(",", ".")
+        try:
+            v = float(t)
+            return -v if neg else v
+        except Exception:
+            logger.warning(f"[{self.BANK_NAME}] No se pudo parsear monto: {s}")
+            return 0.0
 
-        return cleaned_transactions
+    def _infer_year(self, text: str, filename: str = "") -> int:
+        match = re.search(r"(20\d{2}|19\d{2})", text)
+        if match:
+            return int(match.group(1))
+        match = re.search(r"(20\d{2}|19\d{2})", filename)
+        if match:
+            return int(match.group(1))
+        return datetime.now().year
+
+    @staticmethod
+    def required_columns():
+        return ["fecha", "mes", "año", "detalle", "referencia", "debito", "credito", "saldo"]
